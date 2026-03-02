@@ -1,5 +1,8 @@
 Django>=5.0
-djangorestframework
-django-cors-headers
-requests
-psycopg2-binary
+djangorestframework>=3.14
+django-cors-headers>=3.14
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+psycopg2-binary>=2.9
+djongo>=1.7

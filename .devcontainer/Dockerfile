@@ -12,3 +12,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia o restante do código
 COPY . /code/
+
+CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:$PORT"]

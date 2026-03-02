@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-)s@fwddpff6@ew6qso8i!_tkz_=ud10z8tb2!1brr4_r8myb#e"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = []
 
@@ -43,10 +43,14 @@ INSTALLED_APPS = [
     "app.features.alertas",
     "app.features.busca_inteligente",
     "app.features.historico_precos",
+
+    "rest_framework",
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -54,7 +58,6 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 
-    "app.shared.middleware.logging.LoggingMiddleware",
 ]
 
 ROOT_URLCONF = "app.urls"
@@ -74,22 +77,32 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "app.wsgi.application"
+WSGI_APPLICATION = "config.wsgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'djongo',
-        'NAME': 'site_promocoes_db',
-        'ENFORCE_SCHEMA': False,
-        'CLIENT': {
-            'host': 'mongodb://db:27017', 
+import os
+
+if os.environ.get("USE_MONGO", "0") == "1":
+    DATABASES = {
+        "default": {
+            "ENGINE": "djongo",
+            "NAME": "site_promocoes_db",
+            "ENFORCE_SCHEMA": False,
+            "CLIENT": {
+                "host": os.environ.get("MONGO_HOST", "mongodb://db:27017"),
+            },
         }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -110,7 +123,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
 LANGUAGE_CODE = "pt-br"
@@ -122,7 +134,6 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 import os
@@ -130,3 +141,12 @@ import os
 STATIC_URL = "static/"
 MEDIA_URL = "media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+CORS_ALLOW_ALL_ORIGINS = True  # Em produção, substitua por CORS_ALLOWED_ORIGINS
+
+REST_FRAMEWORK = {
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+}

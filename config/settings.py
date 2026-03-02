@@ -146,7 +146,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 CORS_ALLOW_ALL_ORIGINS = True  # Em produção, substitua por CORS_ALLOWED_ORIGINS
 
 CORS_ALLOWED_ORIGINS = [
-    "https://site-promocoes-frontend.vercel.app/",
+    "https://site-promocoes-frontend.vercel.app",
 ]
 
 REST_FRAMEWORK = {

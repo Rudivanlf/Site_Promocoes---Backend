@@ -23,7 +23,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-)s@fwddpff6@ew6qso8i!_tkz_=ud10z8tb2!1brr4_r8myb#e"
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+# Defina DEBUG=False e configure ALLOWED_HOSTS antes de ir para produção.
+DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
@@ -147,7 +148,11 @@ CORS_ALLOW_ALL_ORIGINS = True  # Em produção, substitua por CORS_ALLOWED_ORIGI
 
 CORS_ALLOWED_ORIGINS = [
     "https://site-promocoes-frontend.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [

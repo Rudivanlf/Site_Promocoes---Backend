@@ -1,7 +1,16 @@
 Django>=5.0
 djangorestframework>=3.14
-django-cors-headers>=3.14
-requests>=2.31
+django-cors-headers>=3.14PyJWT>=2.8requests>=2.31
 beautifulsoup4>=4.12
 lxml>=4.9
 psycopg2-binary>=2.9
+django-mongodb-backend>=0.1.0
+# MongoDB Driver
+pymongo>=4.6.0
+# DNS resolver para MongoDB Atlas (conexões mongodb+srv://)
+dnspython>=2.4.0
+# Carregar variáveis de ambiente de arquivos .env
+python-dotenv>=1.0.0
+
+
+

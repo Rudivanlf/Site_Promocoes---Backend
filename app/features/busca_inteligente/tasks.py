@@ -22,14 +22,18 @@ def buscar_promocoes_para_favoritos() -> None:
     # obtém todos os documentos da coleção (sem mascarar nada)
     cursor = fav_service.collection.find({})
 
+    total = 0
+    atualizados = 0
+
     for doc in cursor:
+        total += 1
         produto_nome = doc.get("produto_nome")
         produto_link = doc.get("produto_link")
         consulta: str = produto_nome or produto_link
         if not consulta:
             continue
 
-        logger.debug("buscando promoção para %s", consulta)
+        logger.debug("processando favorito %s", consulta)
         # usa o scraper para fazer a consulta no MercadoLivre
         try:
             resultados: List[Dict] = buscar_produtos_basic(consulta)
@@ -54,6 +58,7 @@ def buscar_promocoes_para_favoritos() -> None:
 
         preco_atual = doc.get("produto_preco", 0.0)
         if novo_valor < preco_atual:
+            atualizados += 1
             # atualiza o favorito para o novo preço; aqui você poderia criar
             # um registro no histórico ou notificar o usuário por e‑mail,
             # websocket, etc.
@@ -67,6 +72,14 @@ def buscar_promocoes_para_favoritos() -> None:
                 preco_atual,
                 novo_valor,
             )
+
+    logger.info(
+        "busca concluída: %d favoritos verificados, %d atualizados",
+        total,
+        atualizados,
+    )
+    # retornar uma tupla para permitir relatórios na chamada, se desejado
+    return total, atualizados
 
 
 # quando quiser integrar com um "agente de IA" real, mova essa lógica para

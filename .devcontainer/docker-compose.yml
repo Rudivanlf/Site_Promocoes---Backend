@@ -9,10 +9,12 @@ services:
       - POSTGRES_PASSWORD=postgres
 
   web:
-    build: .
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
-      - .:/code
+      - ..:/code
     ports:
       - "8000:8000"
     environment:
@@ -21,6 +23,22 @@ services:
       - POSTGRES_PASSWORD=postgres
     depends_on:
       - db
+
+  # serviço dedicado ao comando de verificação de favoritos
+  checker:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: python manage.py checar_favoritos --interval 60
+    volumes:
+      - ..:/code
+    environment:
+      - POSTGRES_NAME=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    depends_on:
+      - db
+    restart: always
 
 volumes:
   postgres_data:

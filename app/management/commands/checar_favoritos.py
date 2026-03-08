@@ -22,7 +22,12 @@ class Command(BaseCommand):
         def _run_once():
             self.stdout.write("iniciando verificação de favoritos")
             try:
-                buscar_promocoes_para_favoritos()
+                resultado = buscar_promocoes_para_favoritos()
+                if resultado is not None:
+                    total, atualizados = resultado
+                    self.stdout.write(
+                        f"relatório: {total} favoritos verificados, {atualizados} atualizados"
+                    )
             except Exception as exc:  # pragma: no cover
                 self.stderr.write(f"erro ao processar favoritos: {exc}")
                 raise

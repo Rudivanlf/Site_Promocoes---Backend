@@ -14,8 +14,15 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
+import requests as _http_session
+import cachecontrol
+
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
+
+# Sessão com cache de certificados do Google — evita buscar os certs a cada requisição
+_google_session = _http_session.session()
+_google_cached_session = cachecontrol.CacheControl(_google_session)
 
 from .models import validate_usuario_data, validate_login_data
 from .services import UsuarioService
@@ -147,13 +154,18 @@ class GoogleLoginView(View):
         try:
             google_info = google_id_token.verify_oauth2_token(
                 google_token,
-                google_requests.Request(),
+                google_requests.Request(session=_google_cached_session),
                 client_id,
             )
         except ValueError as e:
             return JsonResponse(
                 {"success": False, "error": f"Token Google inválido: {str(e)}"},
                 status=401,
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"success": False, "error": "Erro ao verificar token com o Google. Tente novamente."},
+                status=503,
             )
 
         if not google_info.get("email_verified"):

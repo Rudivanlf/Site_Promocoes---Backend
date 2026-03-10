@@ -14,6 +14,9 @@ from django.views import View
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+
 from .models import validate_usuario_data, validate_login_data
 from .services import UsuarioService
 from ..utils import parse_request_body
@@ -107,6 +110,75 @@ class LoginView(View):
             }
         )
 
+
+@method_decorator(csrf_exempt, name="dispatch")
+class GoogleLoginView(View):
+    """
+    POST /api/usuarios/google/
+    Recebe o ID Token emitido pelo Google Identity Services no frontend,
+    valida com os servidores do Google e autentica (ou cria) o usuário.
+
+    Body: { "token": "<google_id_token>" }
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.service = UsuarioService()
+
+    def post(self, request):
+        data, error = parse_request_body(request)
+        if error:
+            return JsonResponse({"success": False, "error": error}, status=400)
+
+        google_token = data.get("token", "").strip()
+        if not google_token:
+            return JsonResponse(
+                {"success": False, "error": "Campo 'token' é obrigatório"},
+                status=400,
+            )
+
+        client_id = settings.GOOGLE_CLIENT_ID
+        if not client_id:
+            return JsonResponse(
+                {"success": False, "error": "Google OAuth não configurado no servidor"},
+                status=500,
+            )
+
+        try:
+            google_info = google_id_token.verify_oauth2_token(
+                google_token,
+                google_requests.Request(),
+                client_id,
+            )
+        except ValueError as e:
+            return JsonResponse(
+                {"success": False, "error": f"Token Google inválido: {str(e)}"},
+                status=401,
+            )
+
+        if not google_info.get("email_verified"):
+            return JsonResponse(
+                {"success": False, "error": "Email Google não verificado"},
+                status=401,
+            )
+
+        try:
+            usuario = self.service.criar_ou_buscar_usuario_google(google_info)
+        except Exception as e:
+            return JsonResponse(
+                {"success": False, "error": f"Erro ao autenticar com Google: {str(e)}"},
+                status=500,
+            )
+
+        token = _gerar_token(usuario)
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Login com Google realizado com sucesso",
+                "token": token,
+                "usuario": usuario,
+            }
+        )
 
 # ---------------------------------------------------------------------------
 # CRUD de usuários

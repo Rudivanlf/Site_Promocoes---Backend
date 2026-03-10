@@ -11,6 +11,9 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # carrega o .env da raiz do projeto
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -161,3 +164,7 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
     ],
 }
+
+# Google OAuth2
+# Obtenha o Client ID em: https://console.cloud.google.com/apis/credentials
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")

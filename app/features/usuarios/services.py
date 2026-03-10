@@ -131,3 +131,38 @@ class UsuarioService:
         """Remove um usuário pelo ID."""
         result = self.collection.delete_one({"id": usuario_id})
         return result.deleted_count > 0
+
+    def criar_ou_buscar_usuario_google(self, google_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Encontra ou cria um usuário a partir das informações validadas do Google.
+        `google_info` deve conter: email, name (opcional), picture (opcional), sub (Google user ID).
+        Nunca exige senha — contas Google não têm senha_hash.
+        """
+        email = google_info["email"].strip().lower()
+
+        usuario = self.collection.find_one({"email": email})
+
+        if usuario:
+            # Atualiza campos do Google se ainda não existirem
+            updates: Dict[str, Any] = {}
+            if "google_id" not in usuario and google_info.get("sub"):
+                updates["google_id"] = google_info["sub"]
+            if "foto" not in usuario and google_info.get("picture"):
+                updates["foto"] = google_info["picture"]
+            if updates:
+                self.collection.update_one({"email": email}, {"$set": updates})
+        else:
+            usuario = {
+                "id": get_next_id("usuarios"),
+                "email": email,
+                "nome": google_info.get("name", ""),
+                "foto": google_info.get("picture", ""),
+                "google_id": google_info.get("sub", ""),
+                # sem senha_hash — login exclusivamente via Google
+            }
+            result = self.collection.insert_one(usuario)
+            usuario["_id"] = result.inserted_id
+
+        doc = serialize_mongo(usuario)
+        doc.pop("senha_hash", None)
+        return doc

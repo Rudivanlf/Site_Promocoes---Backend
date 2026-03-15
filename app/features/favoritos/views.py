@@ -12,6 +12,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .services import FavoritoService
 from ..utils import parse_request_body, autenticar_jwt
+from app.features.email.email import EmailFeature
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -74,6 +75,22 @@ class FavoritoView(View):
                 usuario_email=payload.get("email", ""),
                 data=data,
             )
+
+            # Notifica por e-mail que o produto foi favoritado
+            try:
+                user_email = payload.get("email")
+                if user_email:
+                    print(f"DEBUG: Enviando confirmação de favorito para {user_email}")
+                    EmailFeature.enviar_promocao(
+                        usuario_email=user_email,
+                        usuario_nome=payload.get("first_name") or user_email.split('@')[0],
+                        titulo_promocao=data.get("name"),
+                        link_promocao=data.get("link"),
+                        empresa_nome="Favoritos"
+                    )
+            except Exception as e:
+                print(f"ERRO ao enviar e-mail de favorito: {e}")
+
             return JsonResponse(favorito, status=201)
         except ValueError as e:
             return JsonResponse({"error": str(e)}, status=400)

@@ -1,24 +1,24 @@
 import logging
 from typing import List, Dict
+import logging
 
 from ..favoritos.services import FavoritoService
 from ..scraper.mercadolivre.services import buscar_produtos_basic
-
+from ..email.email import EmailFeature
+from ..usuarios.services import UsuarioService
 
 logger = logging.getLogger(__name__)
-
 
 def buscar_promocoes_para_favoritos() -> None:
     """Percorre todos os favoritos cadastrados e faz uma nova busca usando o
     scraper do MercadoLivre.
 
     O resultado desta busca pode ser usado para atualizar preços, guardar
-    histórico ou disparar alertas. Se/quando você quiser trocar o scraper por
-    um "agente de IA" basta alterar a chamada em vez de usar
-    `buscar_produtos_basic`.
+    histórico ou disparar alertas.
     """
 
     fav_service = FavoritoService()
+    user_service = UsuarioService()
     # obtém todos os documentos da coleção (sem mascarar nada)
     cursor = fav_service.collection.find({})
 
@@ -29,6 +29,8 @@ def buscar_promocoes_para_favoritos() -> None:
         total += 1
         produto_nome = doc.get("produto_nome")
         produto_link = doc.get("produto_link")
+        usuario_id = doc.get("usuario_id")
+        
         consulta: str = produto_nome or produto_link
         if not consulta:
             continue
@@ -37,15 +39,13 @@ def buscar_promocoes_para_favoritos() -> None:
         # usa o scraper para fazer a consulta no MercadoLivre
         try:
             resultados: List[Dict] = buscar_produtos_basic(consulta)
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             logger.error("erro na busca do produto %s: %s", consulta, exc)
             continue
 
         if not resultados:
             continue
 
-        # como exemplo simples, consideramos o primeiro item como o mais
-        # relevante e comparamos o preço
         primeiro = resultados[0]
         novo_preco = primeiro.get("preco")
         if novo_preco is None:
@@ -57,15 +57,33 @@ def buscar_promocoes_para_favoritos() -> None:
             continue
 
         preco_atual = doc.get("produto_preco", 0.0)
+        
+        # Se o preço caiu, atualiza e envia e-mail
         if novo_valor < preco_atual:
             atualizados += 1
-            # atualiza o favorito para o novo preço; aqui você poderia criar
-            # um registro no histórico ou notificar o usuário por e‑mail,
-            # websocket, etc.
+            
+            # 1. Atualiza no MongoDB
             fav_service.collection.update_one(
                 {"_id": doc["_id"]},
                 {"$set": {"produto_preco": novo_valor}},
             )
+            
+            # 2. Busca dados do usuário para enviar o e-mail
+            if usuario_id:
+                user_data = user_service.buscar_por_id(usuario_id)
+                if user_data and user_data.get("email"):
+                    try:
+                        EmailFeature.enviar_promocao(
+                            usuario_email=user_data["email"],
+                            usuario_nome=user_data.get("nome", "Cliente"),
+                            titulo_promocao=f"O preço de '{produto_nome}' caiu!",
+                            link_promocao=produto_link,
+                            empresa_nome="Mercado Livre"
+                        )
+                        logger.info("E-mail de promoção enviado para %s", user_data["email"])
+                    except Exception as e:
+                        logger.error("Falha ao enviar e-mail de alerta: %s", e)
+
             logger.info(
                 "produto %s teve preço reduzido de %s para %s",
                 consulta,

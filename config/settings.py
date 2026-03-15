@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 from dotenv import load_dotenv
+import os
 
 load_dotenv()  # carrega o .env da raiz do projeto
 
@@ -49,6 +50,7 @@ INSTALLED_APPS = [
     "app.features.alertas",
     "app.features.busca_inteligente",
     "app.features.historico_precos",
+    "app.features.email",
 
     "rest_framework",
     "corsheaders",
@@ -165,6 +167,18 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Google OAuth2
-# Obtenha o Client ID em: https://console.cloud.google.com/apis/credentials
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Configurações do Google OAuth
+# Em produção (ex: Render), estas variáveis podem ser strings JSON em variáveis de ambiente
+GOOGLE_CLIENT_SECRET_JSON = os.environ.get('GOOGLE_CLIENT_SECRET_JSON')
+GOOGLE_TOKEN_JSON = os.environ.get('GOOGLE_TOKEN_JSON')
+
+GOOGLE_CLIENT_SECRET_FILE = os.path.join(BASE_DIR, 'config', 'client_secret.json')
+GOOGLE_TOKEN_FILE = os.path.join(BASE_DIR, 'config', 'token.json')
+
+# O e-mail que vai disparar as mensagens
+EMAIL_USER = os.environ.get('EMAIL_USER', 'seu-email@gmail.com')
+# URL do frontend (usada em links nos emails)
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")

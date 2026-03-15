@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .services import buscar_produtos
+from app.features.email.email import EmailFeature
+from django.conf import settings
 
 
 class BuscarProdutosMercadoLivreView(APIView):
@@ -32,6 +34,18 @@ class BuscarProdutosMercadoLivreView(APIView):
                 {"erro": str(exc)},
                 status=status.HTTP_502_BAD_GATEWAY,
             )
+
+        # envia notificação por e-mail para usuários autenticados
+        try:
+            user = getattr(request, 'user', None)
+            if getattr(user, 'is_authenticated', False) and getattr(user, 'email', None):
+                titulo = f"Resultados da sua busca: {query}"
+                link = f"{getattr(settings, 'FRONTEND_URL', '')}/search?q={query}"
+                # usa enviar_promocao apenas como notificação de busca
+                EmailFeature.enviar_promocao(user, titulo, link)
+        except Exception:
+            # não queremos que falha no envio de e-mail quebre a resposta da busca
+            pass
 
         return Response(
             {

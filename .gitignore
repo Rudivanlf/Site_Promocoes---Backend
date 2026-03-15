@@ -1,1 +1,14 @@
 .env
+config/token.json
+config/client_secret.json
+db.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+/venv/
+.vscode/
+
+# Media
+media/

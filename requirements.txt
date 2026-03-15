@@ -18,5 +18,9 @@ google-auth>=2.28.0
 # Cache de certificados do Google para verify_oauth2_token
 cachecontrol>=0.14.0
 
+# Google API client libraries for Gmail OAuth/send
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.70.0
+
 
 

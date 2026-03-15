@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+import jwt
 
 from .services import buscar_produtos
 from app.features.email.email import EmailFeature
@@ -35,16 +36,33 @@ class BuscarProdutosMercadoLivreView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        # envia notificação por e-mail para usuários autenticados
+        # envia notificação por e-mail para usuários autenticados via JWT
         try:
-            user = getattr(request, 'user', None)
-            if getattr(user, 'is_authenticated', False) and getattr(user, 'email', None):
-                titulo = f"Resultados da sua busca: {query}"
-                link = f"{getattr(settings, 'FRONTEND_URL', '')}/search?q={query}"
-                # usa enviar_promocao apenas como notificação de busca
-                EmailFeature.enviar_promocao(user, titulo, link)
-        except Exception:
-            # não queremos que falha no envio de e-mail quebre a resposta da busca
+            auth_header = request.headers.get('Authorization')
+            user_email = None
+            user_name = None
+
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
+                try:
+                    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+                    user_email = payload.get('email')
+                    user_name = payload.get('first_name') or payload.get('username') or user_email.split('@')[0]
+                    print(f"DEBUG: Usuário identificado via JWT: {user_email}")
+                except Exception as e:
+                    print(f"DEBUG: Falha ao decodificar token JWT: {e}")
+
+            if user_email:
+                print(f"DEBUG: Tentando enviar e-mail de busca para {user_email}...")
+                EmailFeature.enviar_notificacao_busca(usuario_email=user_email, usuario_nome=user_name, query=query, total_resultados=len(produtos))
+
+                if detalhes and produtos:
+                    primeiro = produtos[0]
+                    produto_nome = primeiro.get('title') or primeiro.get('name') or primeiro.get('titulo') or primeiro.get('name', '')
+                    produto_link = primeiro.get('link') or primeiro.get('permalink') or ''
+                    EmailFeature.enviar_acesso_produto(usuario_email=user_email, usuario_nome=user_name, produto_nome=produto_nome, produto_link=produto_link)
+        except Exception as e:
+            print(f"ERRO ao processar e-mail na busca: {e}")
             pass
 
         return Response(

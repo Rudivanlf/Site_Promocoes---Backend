@@ -33,8 +33,7 @@ class EmailFeature:
     Esse código irá expirar em 10 minutos.
 
     Caso você não tenha feito essa solicitação, por favor ignore este e-mail.
-
-    Abraços da equipe Easely.
+    
     '''
 
         try:

@@ -182,3 +182,11 @@ GOOGLE_TOKEN_FILE = os.path.join(BASE_DIR, 'config', 'token.json')
 EMAIL_USER = os.environ.get('EMAIL_USER', 'seu-email@gmail.com')
 # URL do frontend (usada em links nos emails)
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+# Google Client ID para autenticação no frontend/backend
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
+
+# JWT Secret Key
+JWT_SECRET = os.environ.get("JWT_SECRET", SECRET_KEY)
+JWT_ALGORITHM = "HS256"
+

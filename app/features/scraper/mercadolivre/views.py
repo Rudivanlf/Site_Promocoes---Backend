@@ -35,14 +35,19 @@ class BuscarProdutosMercadoLivreView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        # envia notificação por e-mail para usuários autenticados
+       # envia notificação por e-mail para usuários autenticados
         try:
             user = getattr(request, 'user', None)
             if getattr(user, 'is_authenticated', False) and getattr(user, 'email', None):
-                titulo = f"Resultados da sua busca: {query}"
-                link = f"{getattr(settings, 'FRONTEND_URL', '')}/search?q={query}"
-                # usa enviar_promocao apenas como notificação de busca
-                EmailFeature.enviar_promocao(user, titulo, link)
+                # notificação de busca
+                EmailFeature.enviar_notificacao_busca(usuario=user, query=query, total_resultados=len(produtos))
+
+                # se o cliente pediu detalhes, notifica que abriu o produto (usa primeiro resultado como exemplo)
+                if detalhes and produtos:
+                    primeiro = produtos[0]
+                    produto_nome = primeiro.get('title') or primeiro.get('name') or primeiro.get('titulo') or primeiro.get('name', '')
+                    produto_link = primeiro.get('link') or primeiro.get('permalink') or ''
+                    EmailFeature.enviar_acesso_produto(usuario=user, produto_nome=produto_nome, produto_link=produto_link)
         except Exception:
             # não queremos que falha no envio de e-mail quebre a resposta da busca
             pass

@@ -140,6 +140,39 @@ Obrigado por usar nosso serviço.
             print(f'Erro ao enviar notificação de busca: {e}')
 
     @staticmethod
+    def enviar_confirmacao_favorito(usuario=None, produto_nome=None, produto_link=None, usuario_email=None, usuario_nome=None):
+        """Novo: Envia um e-mail confirmando que o produto foi favoritado."""
+        to_email = usuario_email
+        name = usuario_nome
+        if to_email is None and usuario is not None:
+            to_email = getattr(usuario, 'email', None) if not isinstance(usuario, str) else usuario
+            if name is None:
+                name = getattr(usuario, 'first_name', None) or getattr(usuario, 'username', None) if not isinstance(usuario, str) else None
+
+        if not to_email:
+            return
+
+        name = name or 'Cliente'
+        assunto = f'Novo favorito: {produto_nome}'
+        mensagem = f'''
+Olá {name},
+
+Você acabou de adicionar um novo produto aos seus favoritos: {produto_nome}
+
+Você receberá um e-mail se este produto tiver uma queda de preço!
+
+Acompanhe por aqui:
+{produto_link}
+
+Obrigado por usar nosso serviço.
+
+'''
+        try:
+            send_email_oauth(to_email=to_email, subject=assunto, message_text=mensagem)
+        except Exception as e:
+            print(f'Erro ao enviar confirmação de favorito: {e}')
+
+    @staticmethod
     def enviar_acesso_produto(usuario=None, produto_nome=None, produto_link=None, usuario_email=None, usuario_nome=None):
         """Envia um e-mail quando o usuário acessa/abre os detalhes de um produto."""
         to_email = usuario_email

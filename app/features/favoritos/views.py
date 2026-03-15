@@ -76,17 +76,16 @@ class FavoritoView(View):
                 data=data,
             )
 
-            # Notifica por e-mail que o produto foi favoritado
+            # Envia confirmação de favorito
             try:
                 user_email = payload.get("email")
                 if user_email:
                     print(f"DEBUG: Enviando confirmação de favorito para {user_email}")
-                    EmailFeature.enviar_promocao(
+                    EmailFeature.enviar_confirmacao_favorito(
                         usuario_email=user_email,
                         usuario_nome=payload.get("first_name") or user_email.split('@')[0],
-                        titulo_promocao=data.get("name"),
-                        link_promocao=data.get("link"),
-                        empresa_nome="Favoritos"
+                        produto_nome=data.get("name"),
+                        produto_link=data.get("link")
                     )
             except Exception as e:
                 print(f"ERRO ao enviar e-mail de favorito: {e}")

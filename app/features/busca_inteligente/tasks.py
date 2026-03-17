@@ -29,18 +29,18 @@ def buscar_promocoes_para_favoritos() -> None:
         total += 1
         produto_nome = doc.get("produto_nome")
         produto_link = doc.get("produto_link")
-        usuario_id = doc.get("usuario_id")
-        
-        consulta: str = produto_nome or produto_link
-        if not consulta:
+
+        if not produto_link:
+            logger.warning("Favorito %s ignorado por falta de link.", doc.get("_id"))
             continue
 
-        logger.debug("processando favorito %s", consulta)
-        # usa o scraper para fazer a consulta no MercadoLivre
+        logger.info("Processando favorito: %s", produto_link)
+        
+        # usa o scraper para fazer a consulta no MercadoLivre usando o link direto
         try:
-            resultados: List[Dict] = buscar_produtos_basic(consulta)
+            resultados: List[Dict] = buscar_produtos_basic(produto_link)
         except Exception as exc:
-            logger.error("erro na busca do produto %s: %s", consulta, exc)
+            logger.error("erro na busca do produto %s: %s", produto_link, exc)
             continue
 
         if not resultados:
@@ -58,8 +58,21 @@ def buscar_promocoes_para_favoritos() -> None:
 
         preco_atual = doc.get("produto_preco", 0.0)
         
+        # 1. Determina o destinatário ANTES de testar a queda de preço
+        destinatario_email = doc.get("usuario_email")
+        destinatario_nome = destinatario_email.split('@')[0] if destinatario_email else "Cliente"
+
+        # LOGS DE DEBUG 
+        print(f"DEBUG CRON: Processando produto '{produto_nome}'")
+        print(f"DEBUG CRON: Preço no Banco: {preco_atual} | Preço no ML agora: {novo_valor}")
+
         # Se o preço caiu, atualiza e envia e-mail
         if novo_valor < preco_atual:
+            if not destinatario_email:
+                logger.warning("Favorito %s teve queda de preço, mas não possui 'usuario_email'!", doc["_id"])
+                continue
+
+            print(f"DEBUG CRON: QUEDA DETECTADA! Enviando e-mail para {destinatario_email}")
             atualizados += 1
             
             # 1. Atualiza no MongoDB
@@ -68,18 +81,6 @@ def buscar_promocoes_para_favoritos() -> None:
                 {"$set": {"produto_preco": novo_valor}},
             )
             
-            # 2. Determina o destinatário
-            # Usamos o e-mail que o FavoritoService já grava no documento do favorito.
-            destinatario_email = doc.get("usuario_email")
-            
-            # Se não houver e-mail, não temos para onde enviar a promoção
-            if not destinatario_email:
-                logger.warning("Favorito %s não possui 'usuario_email' para envio da promoção", doc["_id"])
-                continue
-
-            # O sistema usa apenas o e-mail. Para o campo de nome no template do e-mail
-            destinatario_nome = destinatario_email.split('@')[0]
-
             try:
                 EmailFeature.enviar_promocao(
                     usuario_email=destinatario_email,
@@ -94,7 +95,7 @@ def buscar_promocoes_para_favoritos() -> None:
 
             logger.info(
                 "produto %s teve preço reduzido de %s para %s",
-                consulta,
+                produto_nome,
                 preco_atual,
                 novo_valor,
             )

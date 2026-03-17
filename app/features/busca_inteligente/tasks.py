@@ -68,21 +68,29 @@ def buscar_promocoes_para_favoritos() -> None:
                 {"$set": {"produto_preco": novo_valor}},
             )
             
-            # 2. Busca dados do usuário para enviar o e-mail
-            if usuario_id:
-                user_data = user_service.buscar_por_id(usuario_id)
-                if user_data and user_data.get("email"):
-                    try:
-                        EmailFeature.enviar_promocao(
-                            usuario_email=user_data["email"],
-                            usuario_nome=user_data.get("nome", "Cliente"),
-                            titulo_promocao=f"O preço de '{produto_nome}' caiu!",
-                            link_promocao=produto_link,
-                            empresa_nome="Mercado Livre"
-                        )
-                        logger.info("E-mail de promoção enviado para %s", user_data["email"])
-                    except Exception as e:
-                        logger.error("Falha ao enviar e-mail de alerta: %s", e)
+            # 2. Determina o destinatário
+            # Usamos o e-mail que o FavoritoService já grava no documento do favorito.
+            destinatario_email = doc.get("usuario_email")
+            
+            # Se não houver e-mail, não temos para onde enviar a promoção
+            if not destinatario_email:
+                logger.warning("Favorito %s não possui 'usuario_email' para envio da promoção", doc["_id"])
+                continue
+
+            # O sistema usa apenas o e-mail. Para o campo de nome no template do e-mail
+            destinatario_nome = destinatario_email.split('@')[0]
+
+            try:
+                EmailFeature.enviar_promocao(
+                    usuario_email=destinatario_email,
+                    usuario_nome=destinatario_nome,
+                    titulo_promocao=f"O preço de '{produto_nome}' caiu!",
+                    link_promocao=produto_link,
+                    empresa_nome="Mercado Livre"
+                )
+                logger.info("E-mail de promoção enviado para %s", destinatario_email)
+            except Exception as e:
+                logger.error("Falha ao enviar e-mail de alerta: %s", e)
 
             logger.info(
                 "produto %s teve preço reduzido de %s para %s",

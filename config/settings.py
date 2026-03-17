@@ -75,11 +75,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 if os.environ.get("USE_MONGO", "1") == "1":
     DATABASES = {
         "default": {
-            "ENGINE": "djongo",
+            "ENGINE": "django_mongodb", # NÃO use 'djongo' aqui!
             "NAME": os.environ.get("MONGO_DB_NAME", "site_promocoes_db"),
             "ENFORCE_SCHEMA": False,
             "CLIENT": {
-                "host": os.environ.get("MONGO_URI"), 
+                "host": os.environ.get("MONGO_URI"),
             },
         }
     }

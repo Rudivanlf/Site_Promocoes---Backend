@@ -8,6 +8,7 @@ from app.features.email.email import EmailFeature
 from django.conf import settings
 
 
+
 class BuscarProdutosMercadoLivreView(APIView):
 
     def get(self, request):

@@ -8,6 +8,7 @@ Responsável por toda interação com o MongoDB e regras de autenticação.
 from typing import Optional, Dict, Any, List
 
 from django.contrib.auth.hashers import make_password, check_password
+from pymongo import errors as pymongo_errors
 
 from ..mongo import db
 from ..utils import serialize_mongo, get_next_id
@@ -19,7 +20,11 @@ class UsuarioService:
     def __init__(self):
         self.collection = db["usuarios"]
         # Garante índice único no campo email para evitar duplicatas
-        self.collection.create_index("email", unique=True, sparse=True)
+        try:
+            self.collection.create_index("email", unique=True, sparse=True)
+        except pymongo_errors.PyMongoError:
+            # Não derruba a API no startup da view; operações vão tratar indisponibilidade.
+            pass
 
     # ------------------------------------------------------------------
     # Leitura
@@ -43,11 +48,17 @@ class UsuarioService:
         Busca um usuário pelo email (inclui senha_hash para validação interna).
         Uso exclusivo de autenticação — nunca exponha o resultado direto na API.
         """
-        return self.collection.find_one({"email": email.strip().lower()})
+        try:
+            return self.collection.find_one({"email": email.strip().lower()})
+        except pymongo_errors.PyMongoError as exc:
+            raise ConnectionError("Banco de dados indisponível no momento") from exc
 
     def email_ja_cadastrado(self, email: str) -> bool:
         """Verifica se um email já está em uso."""
-        return self.collection.find_one({"email": email.strip().lower()}) is not None
+        try:
+            return self.collection.find_one({"email": email.strip().lower()}) is not None
+        except pymongo_errors.PyMongoError as exc:
+            raise ConnectionError("Banco de dados indisponível no momento") from exc
 
     # ------------------------------------------------------------------
     # Escrita

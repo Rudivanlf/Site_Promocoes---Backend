@@ -34,4 +34,5 @@ urlpatterns = [
 
     path("api/favoritos/", include("app.features.favoritos.urls")),
     path("api/scraper/mercadolivre/", include("app.features.scraper.mercadolivre.urls")),
+    path("api/scraper/", include("app.features.historico_precos.urls")),
 ]

@@ -95,10 +95,21 @@ class LoginView(View):
         if not is_valid:
             return JsonResponse({"success": False, "errors": errors}, status=400)
 
-        usuario = self.service.autenticar_usuario(
-            email=data["email"],
-            senha=data["senha"],
-        )
+        try:
+            usuario = self.service.autenticar_usuario(
+                email=data["email"],
+                senha=data["senha"],
+            )
+        except ConnectionError as e:
+            return JsonResponse(
+                {"success": False, "error": str(e)},
+                status=503,
+            )
+        except Exception:
+            return JsonResponse(
+                {"success": False, "error": "Erro interno ao autenticar usuário"},
+                status=500,
+            )
 
         # Mensagem genérica para não revelar se o email existe ou não
         if not usuario:

@@ -36,7 +36,7 @@ def buscar_promocoes_para_favoritos() -> None:
         
         # usa o scraper para fazer a consulta no MercadoLivre usando o link direto
         try:
-            resultados: List[Dict] = buscar_produtos_basic(produto_link)
+            resultados = buscar_produtos(produto_nome, detalhes=True)
         except Exception as exc:
             print(f"DEBUG CRON: Erro no scraper para {produto_link}: {exc}", flush=True)
             continue
@@ -45,8 +45,9 @@ def buscar_promocoes_para_favoritos() -> None:
             print(f"DEBUG CRON: Nenhum preço encontrado para {produto_link}", flush=True)
             continue
 
-        primeiro = resultados[0]
-        novo_preco = primeiro.get("preco")
+        # Tenta encontrar o produto exato pelo link nos resultados, ou pega o primeiro
+        match = next((p for p in resultados if p.get("link") == produto_link), resultados[0])
+        novo_preco = match.get("preco")
         if novo_preco is None:
             continue
 

@@ -1,6 +1,7 @@
 import logging
 import re
 import requests
+import traceback
 from bs4 import BeautifulSoup
 from typing import List, Dict
 
@@ -13,18 +14,25 @@ logger = logging.getLogger(__name__)
 
 def extrair_preco_pelo_link_direto(link: str) -> float | None:
     try:
-        # allow_redirects é crucial para links de mclics
-        res = requests.get(link, headers=HEADERS, timeout=15, allow_redirects=True)
+        # User-Agent mobile costuma ser menos bloqueado em data centers
+        # e o Mercado Livre serve um HTML mais enxuto (fácil de ler)
+        HEADERS_PROD = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "pt-BR,pt;q=0.9",
+        }
+
+        res = requests.get(link, headers=HEADERS_PROD, timeout=15, allow_redirects=True)
         
-        # Log de depuração para o Render
+        # LOG OBRIGATÓRIO PARA O RENDER - Identificar se o código novo rodou
+        print(f"DEBUG CRON: [RENDER] Link: {link[:40]} | HTTP Status: {res.status_code}", flush=True)
+
         if res.status_code != 200:
-            print(f"DEBUG CRON: Erro HTTP {res.status_code} para o link {link[:50]}...", flush=True)
             if res.status_code == 403:
-                print("DEBUG CRON: Acesso Negado (403) pelo Mercado Livre no Render.", flush=True)
+                print("DEBUG CRON: [RENDER] BLOQUEIO 403 (Forbidden) detectado.", flush=True)
             return None
 
         if "captcha" in res.text.lower():
-            print(f"DEBUG CRON: CAPTCHA detectado no link {link[:50]}", flush=True)
+            print(f"DEBUG CRON: [RENDER] CAPTCHA detectado no link {link[:40]}", flush=True)
             return None
 
         soup = BeautifulSoup(res.text, "lxml")
@@ -33,7 +41,6 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
         scripts = soup.find_all("script", type="application/ld+json")
         for script in scripts:
             if '"offers"' in script.text and '"price"' in script.text:
-                # Regex mais flexível para capturar o preço no JSON
                 price_match = re.search(r'"price":\s*"?([\d\.]+)"?', script.text)
                 if price_match:
                     return float(price_match.group(1))
@@ -43,7 +50,7 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
             ".ui-pdp-price__second-line .andes-money-amount__fraction",
             ".ui-pdp-container__row--price .andes-money-amount__fraction",
             ".ui-pdp-price__price .andes-money-amount__fraction",
-            ".ui-render-price-part .andes-money-amount__fraction", # Novo fallback
+            ".ui-render-price-part .andes-money-amount__fraction",
             "meta[itemprop='price']",
             "meta[property='product:price:amount']"
         ]

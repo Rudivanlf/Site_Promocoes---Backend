@@ -1,0 +1,15 @@
+name: Verificar Preços de Favoritos
+
+on:
+  schedule:
+    # Roda a cada 30 minutos
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Permite disparar manualmente pela aba "Actions" no GitHub
+
+jobs:
+  verificar-precos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar API do Render
+        run: |
+          curl -f -X GET "${{ secrets.BACKEND_URL }}/api/cron/verificar-precos/"

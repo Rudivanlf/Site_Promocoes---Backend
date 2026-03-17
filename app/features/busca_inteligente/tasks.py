@@ -13,21 +13,37 @@ logger = logging.getLogger(__name__)
 
 def extrair_preco_pelo_link_direto(link: str) -> float | None:
     try:
+        # allow_redirects é crucial para links de mclics
         res = requests.get(link, headers=HEADERS, timeout=15, allow_redirects=True)
         
+        # Log de depuração para o Render
+        if res.status_code != 200:
+            print(f"DEBUG CRON: Erro HTTP {res.status_code} para o link {link[:50]}...", flush=True)
+            if res.status_code == 403:
+                print("DEBUG CRON: Acesso Negado (403) pelo Mercado Livre no Render.", flush=True)
+            return None
+
+        if "captcha" in res.text.lower():
+            print(f"DEBUG CRON: CAPTCHA detectado no link {link[:50]}", flush=True)
+            return None
+
         soup = BeautifulSoup(res.text, "lxml")
         
+        # Estratégia 1: JSON-LD (A mais robusta)
         scripts = soup.find_all("script", type="application/ld+json")
         for script in scripts:
             if '"offers"' in script.text and '"price"' in script.text:
+                # Regex mais flexível para capturar o preço no JSON
                 price_match = re.search(r'"price":\s*"?([\d\.]+)"?', script.text)
                 if price_match:
                     return float(price_match.group(1))
 
+        # Estratégia 2: Seletores de Detalhes (PDP) revisados
         selectors = [
             ".ui-pdp-price__second-line .andes-money-amount__fraction",
             ".ui-pdp-container__row--price .andes-money-amount__fraction",
             ".ui-pdp-price__price .andes-money-amount__fraction",
+            ".ui-render-price-part .andes-money-amount__fraction", # Novo fallback
             "meta[itemprop='price']",
             "meta[property='product:price:amount']"
         ]

@@ -1,3 +1,4 @@
+import threading
 from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse, JsonResponse
@@ -10,18 +11,14 @@ def _home(request):
 
 def cron_verificar_precos(request):
     """
-    Gatilho para o GitHub Actions ou outro cron service.
-    Busca promoções para todos os itens favoritados.
+    Gatilho para o GitHub Actions. 
+    Inicia a busca em uma thread separada para responder rápido ao cliente.
     """
-    try:
-        total, atualizados = buscar_promocoes_para_favoritos()
-        return JsonResponse({
-            "status": "sucesso",
-            "verificados": total,
-            "atualizados": atualizados
-        })
-    except Exception as e:
-        return JsonResponse({"status": "erro", "mensagem": str(e)}, status=500)
+    threading.Thread(target=buscar_promocoes_para_favoritos).start()
+    return JsonResponse({
+        "status": "iniciado",
+        "mensagem": "Busca de promoções iniciada em segundo plano."
+    })
 
 
 urlpatterns = [

@@ -52,8 +52,13 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
         if "click" in link_limpo and "mercadolivre.com" in link_limpo:
             print(f"DEBUG CRON: Detectado link encurtado, tentando expandir...", flush=True)
             link_expandido = expandir_link_encurtado(link_limpo)
+            # Validar se a URL expandida é legítima (não para páginas de login/verificação)
             if link_expandido != link_limpo:
-                link_limpo = link_expandido
+                if "/gz/account-verification" not in link_expandido and "/login" not in link_expandido:
+                    link_limpo = link_expandido
+                else:
+                    print(f"DEBUG CRON: Link expandiu para página de autenticação - ignorando", flush=True)
+                    return None
         
         # User-Agent mobile costuma ser menos bloqueado em data centers
         # e o Mercado Livre serve um HTML mais enxuto (fácil de ler)
@@ -188,25 +193,10 @@ def buscar_promocoes_para_favoritos() -> None:
         # Tenta extrair o preco usando a logica
         novo_valor = extrair_preco_pelo_link_direto(produto_link)
 
-        # Fallback inteligente: se falhou e temos produto_id, reconstrói um link direto
-        if novo_valor is None and produto_id:
-            print(f"DEBUG CRON: Extração falhou para link original, tentando com produto_id...", flush=True)
-            # Produto_id pode vir como "MLB31067313" ou "31067313", precisamos do número puro
-            id_numero = str(produto_id).replace("MLB", "").replace("mlb", "")
-            link_alternativo = f"https://www.mercadolivre.com.br/p/{id_numero}"
-            novo_valor = extrair_preco_pelo_link_direto(link_alternativo)
-            if novo_valor is not None:
-                print(f"DEBUG CRON: ✓ Sucesso! Preço extraído via produto_id: {novo_valor}", flush=True)
+        # ⚠️ IMPORTANTE: Sem fallback! 
+        # Se o link original falha, o sistema não tenta alternativas para evitar falsos positivos.
+        # Isso é seguro pois significa que produtos com links quebrados não enviarão emails indevidos.
         
-        # Ultra-fallback: se ainda falhou, tentar com o nome (último recurso)
-        if novo_valor is None and produto_nome:
-            print(f"DEBUG CRON: Espera crítica - tentando busca por nome do produto...", flush=True)
-            # Gerar uma URL de busca a partir do nome
-            nome_limpo = produto_nome.lower().replace(" ", "-")[:50]
-            link_busca = f"https://www.mercadolivre.com.br/ofertas#{nome_limpo}"
-            print(f"DEBUG CRON: [Fallback crítico] Tentando: {link_busca[:60]}", flush=True)
-            # Não tenta usar o link de busca diretamente, apenas como último recurso avisa
-
         if novo_valor is None:
             print(f"DEBUG CRON: Preco nao encontrado para {produto_link[:80]}", flush=True)
             continue

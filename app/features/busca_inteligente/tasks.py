@@ -12,10 +12,8 @@ logger = logging.getLogger(__name__)
 def buscar_promocoes_para_favoritos() -> None:
     """Percorre todos os favoritos cadastrados e faz uma nova busca usando o
     scraper do MercadoLivre.
-
-    O resultado desta busca pode ser usado para atualizar preços, guardar
-    histórico ou disparar alertas.
     """
+    print("DEBUG CRON: Iniciando tarefa de busca de promoções...", flush=True)
 
     fav_service = FavoritoService()
     user_service = UsuarioService()
@@ -31,19 +29,20 @@ def buscar_promocoes_para_favoritos() -> None:
         produto_link = doc.get("produto_link")
 
         if not produto_link:
-            logger.warning("Favorito %s ignorado por falta de link.", doc.get("_id"))
+            print(f"DEBUG CRON: Favorito {doc.get('_id')} ignorado por falta de link.", flush=True)
             continue
 
-        logger.info("Processando favorito: %s", produto_link)
+        print(f"DEBUG CRON: Processando favorito: {produto_link}", flush=True)
         
         # usa o scraper para fazer a consulta no MercadoLivre usando o link direto
         try:
             resultados: List[Dict] = buscar_produtos_basic(produto_link)
         except Exception as exc:
-            logger.error("erro na busca do produto %s: %s", produto_link, exc)
+            print(f"DEBUG CRON: Erro no scraper para {produto_link}: {exc}", flush=True)
             continue
 
         if not resultados:
+            print(f"DEBUG CRON: Nenhum preço encontrado para {produto_link}", flush=True)
             continue
 
         primeiro = resultados[0]
@@ -62,17 +61,16 @@ def buscar_promocoes_para_favoritos() -> None:
         destinatario_email = doc.get("usuario_email")
         destinatario_nome = destinatario_email.split('@')[0] if destinatario_email else "Cliente"
 
-        # LOGS DE DEBUG 
-        print(f"DEBUG CRON: Processando produto '{produto_nome}'")
-        print(f"DEBUG CRON: Preço no Banco: {preco_atual} | Preço no ML agora: {novo_valor}")
+        # LOGS DE DEBUG FORÇADOS
+        print(f"DEBUG CRON: Produto '{produto_nome}' | No Banco: {preco_atual} | No ML: {novo_valor}", flush=True)
 
         # Se o preço caiu, atualiza e envia e-mail
         if novo_valor < preco_atual:
             if not destinatario_email:
-                logger.warning("Favorito %s teve queda de preço, mas não possui 'usuario_email'!", doc["_id"])
+                print(f"DEBUG CRON: QUEDA DETECTADA, mas favorito sem e-mail!", flush=True)
                 continue
 
-            print(f"DEBUG CRON: QUEDA DETECTADA! Enviando e-mail para {destinatario_email}")
+            print(f"DEBUG CRON: QUEDA DETECTADA! Enviando e-mail para {destinatario_email}", flush=True)
             atualizados += 1
             
             # 1. Atualiza no MongoDB
@@ -89,9 +87,16 @@ def buscar_promocoes_para_favoritos() -> None:
                     link_promocao=produto_link,
                     empresa_nome="Mercado Livre"
                 )
-                logger.info("E-mail de promoção enviado para %s", destinatario_email)
+                print(f"DEBUG CRON: E-mail enviado com sucesso para {destinatario_email}", flush=True)
             except Exception as e:
-                logger.error("Falha ao enviar e-mail de alerta: %s", e)
+                print(f"DEBUG CRON: ERRO ao enviar e-mail: {e}", flush=True)
+
+            logger.info(
+                "produto %s teve preço reduzido de %s para %s",
+                produto_nome,
+                preco_atual,
+                novo_valor,
+            )
 
             logger.info(
                 "produto %s teve preço reduzido de %s para %s",

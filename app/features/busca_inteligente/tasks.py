@@ -13,21 +13,23 @@ logger = logging.getLogger(__name__)
 
 def extrair_preco_pelo_link_direto(link: str) -> float | None:
     try:
-        # Resolve links de redirecionamento
-        response = requests.get(link, headers=HEADERS, timeout=15, allow_redirects=True)
-        response.raise_for_status()
+        res = requests.get(link, headers=HEADERS, timeout=15, allow_redirects=True)
         
-        # O link final apos redirecionamentos
-        url_final = response.url
-        soup = BeautifulSoup(response.text, "lxml")
+        soup = BeautifulSoup(res.text, "lxml")
         
-        # 1. Tentar seletores de preco da pagina de PRODUTO 
-        # O preco principal geralmente esta em .ui-pdp-price__second-line ou .ui-pdp-price__price
+        scripts = soup.find_all("script", type="application/ld+json")
+        for script in scripts:
+            if '"offers"' in script.text and '"price"' in script.text:
+                price_match = re.search(r'"price":\s*"?([\d\.]+)"?', script.text)
+                if price_match:
+                    return float(price_match.group(1))
+
         selectors = [
             ".ui-pdp-price__second-line .andes-money-amount__fraction",
+            ".ui-pdp-container__row--price .andes-money-amount__fraction",
             ".ui-pdp-price__price .andes-money-amount__fraction",
-            ".ui-pdp-price .andes-money-amount__fraction",
-            "meta[property=\"product:price:amount\"]", # Fallback meta tag
+            "meta[itemprop='price']",
+            "meta[property='product:price:amount']"
         ]
         
         for sel in selectors:
@@ -36,43 +38,21 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
             
             if el.name == "meta":
                 val = el.get("content")
-                if val: return float(val)
-                continue
+                if val: 
+                    return float(val)
+            else:
+                txt = el.get_text(strip=True)
+                # Tenta pegar centavos no mesmo container
+                parent = el.find_parent(class_="andes-money-amount")
+                cents = parent.select_one(".andes-money-amount__cents") if parent else None
+                if cents:
+                    txt = f"{txt},{cents.get_text(strip=True)}"
+                
+                norm = _extrair_preco_from_text(txt)
+                if norm:
+                    return float(norm)
 
-            frac = el.get_text(strip=True)
-            if not frac: continue
-            
-            # Busca centavos (opcional)
-            cents = None
-            cents_el = None
-            # Tenta achar centavos no mesmo container pai
-            parent = el.find_parent(class_="andes-money-amount")
-            if parent:
-                cents_el = parent.select_one(".andes-money-amount__cents")
-            
-            if not cents_el:
-                cents_el = soup.select_one(".ui-pdp-price__second-line .andes-money-amount__cents")
-            
-            if cents_el:
-                cents = cents_el.get_text(strip=True)
-            
-            texto = frac
-            if cents:
-                texto = f"{texto},{cents}"
-            
-            norm = _extrair_preco_from_text(texto)
-            if norm:
-                return float(norm)
-
-        # 2. Fallback: Se for uma pagina de busca disfarçada ou outro layout
-        # Tenta pegar qualquer preco que pareça o principal
-        price_meta = soup.select_one("meta[itemprop=\"price\"]")
-        if price_meta and price_meta.get("content"):
-            try:
-                return float(price_meta.get("content"))
-            except: pass
-
-        # 3. Fallback Regex no texto visivel (igual ao services.py)
+        # 3. Fallback Regex no texto visivel 
         full = soup.get_text(" ", strip=True)
         m = re.search(r"R\$\s*([\d\.,]+)", full)
         if m:
@@ -86,7 +66,7 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
 
 def buscar_promocoes_para_favoritos() -> None:
     """Percorre os favoritos e usa a logica de extracao direta do services.py"""
-    print("DEBUG CRON: Iniciando tarefa de busca de promo��es...", flush=True)
+    print("DEBUG CRON: Iniciando tarefa de busca de promoções...", flush=True)
 
     fav_service = FavoritoService()
     cursor = fav_service.collection.find({})

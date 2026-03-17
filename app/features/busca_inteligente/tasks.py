@@ -3,7 +3,7 @@ from typing import List, Dict
 import logging
 
 from ..favoritos.services import FavoritoService
-from ..scraper.mercadolivre.services import buscar_produtos_basic
+from ..scraper.mercadolivre.services import buscar_produtos
 from ..email.email import EmailFeature
 from ..usuarios.services import UsuarioService
 

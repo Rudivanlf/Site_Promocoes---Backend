@@ -72,14 +72,14 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # Database - Lógica de troca de banco
-if os.environ.get("USE_MONGO", "1") == "1":
+if os.environ.get("USE_MONGO", "0") == "1":
     DATABASES = {
         "default": {
-            "ENGINE": "django_mongodb", # NÃO use 'djongo' aqui!
-            "NAME": os.environ.get("MONGO_DB_NAME", "site_promocoes_db"),
+            "ENGINE": "djongo",
+            "NAME": "site_promocoes_db",
             "ENFORCE_SCHEMA": False,
             "CLIENT": {
-                "host": os.environ.get("MONGO_URI"),
+                "host": os.environ.get("MONGO_HOST", "mongodb://db:27017"),
             },
         }
     }

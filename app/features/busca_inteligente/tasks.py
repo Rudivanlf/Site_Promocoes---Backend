@@ -12,8 +12,49 @@ from ..usuarios.services import UsuarioService
 
 logger = logging.getLogger(__name__)
 
+def expandir_link_encurtado(link: str) -> str:
+    if not ("click" in link and "mercadolivre.com" in link):
+        return link  
+    
+    try:
+        HEADERS_MINIMAL = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15",
+            "Accept": "text/html",
+        }
+        
+        # Tentar GET com allow_redirects=True (HEAD pode não funcionar com redirects)
+        res = requests.get(link, headers=HEADERS_MINIMAL, timeout=10, allow_redirects=True, stream=False)
+        final_url = res.url
+        
+        if final_url and final_url != link and "mercadolivre.com" in final_url:
+            print(f"DEBUG CRON: Link expandido de {link[:60]} para {final_url[:60]}", flush=True)
+            return final_url
+        elif final_url:
+            print(f"DEBUG CRON: Link não foi expandido (mesmo após redirecionamento): {final_url[:60]}", flush=True)
+    except requests.Timeout:
+        print(f"DEBUG CRON: Timeout ao expandir link {link[:60]}", flush=True)
+    except Exception as e:
+        print(f"DEBUG CRON: Erro ao expandir link {link[:60]}: {type(e).__name__}: {str(e)[:50]}", flush=True)
+    
+    return link
+
 def extrair_preco_pelo_link_direto(link: str) -> float | None:
     try:
+        # Normalizar link: remover fragmentos e parâmetros de rastreamento desnecessários
+        # Os fragmentos (#...) não são enviados ao servidor, mas melhor garantir
+        link_limpo = link.split('#')[0].strip()
+        
+        if not link_limpo:
+            print(f"DEBUG CRON: Link vazio após limpeza: {link}", flush=True)
+            return None
+        
+        # Se é um link encurtado, tentar expandir primeiro
+        if "click" in link_limpo and "mercadolivre.com" in link_limpo:
+            print(f"DEBUG CRON: Detectado link encurtado, tentando expandir...", flush=True)
+            link_expandido = expandir_link_encurtado(link_limpo)
+            if link_expandido != link_limpo:
+                link_limpo = link_expandido
+        
         # User-Agent mobile costuma ser menos bloqueado em data centers
         # e o Mercado Livre serve um HTML mais enxuto (fácil de ler)
         HEADERS_PROD = {
@@ -21,29 +62,41 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
             "Accept-Language": "pt-BR,pt;q=0.9",
         }
 
-        res = requests.get(link, headers=HEADERS_PROD, timeout=15, allow_redirects=True)
+        res = requests.get(link_limpo, headers=HEADERS_PROD, timeout=15, allow_redirects=True)
         
         # LOG OBRIGATÓRIO PARA O RENDER - Identificar se o código novo rodou
-        print(f"DEBUG CRON: [RENDER] Link: {link[:40]} | HTTP Status: {res.status_code}", flush=True)
+        print(f"DEBUG CRON: [RENDER] Link: {link_limpo[:60]} | HTTP Status: {res.status_code}", flush=True)
 
         if res.status_code != 200:
             if res.status_code == 403:
                 print("DEBUG CRON: [RENDER] BLOQUEIO 403 (Forbidden) detectado.", flush=True)
+            elif res.status_code >= 400:
+                print(f"DEBUG CRON: [RENDER] HTTP {res.status_code} para {link_limpo[:60]}", flush=True)
             return None
 
         if "captcha" in res.text.lower():
-            print(f"DEBUG CRON: [RENDER] CAPTCHA detectado no link {link[:40]}", flush=True)
+            print(f"DEBUG CRON: [RENDER] CAPTCHA detectado no link {link_limpo[:60]}", flush=True)
+            return None
+        
+        # Validação: garantir que recebemos HTML válido
+        if len(res.text) < 100:
+            print(f"DEBUG CRON: Resposta HTML muito curta ({len(res.text)} bytes) - possível redirecionamento incorreto", flush=True)
             return None
 
         soup = BeautifulSoup(res.text, "lxml")
         
         # Estratégia 1: JSON-LD (A mais robusta)
         scripts = soup.find_all("script", type="application/ld+json")
-        for script in scripts:
-            if '"offers"' in script.text and '"price"' in script.text:
-                price_match = re.search(r'"price":\s*"?([\d\.]+)"?', script.text)
+        print(f"DEBUG CRON: Encontrados {len(scripts)} scripts JSON-LD", flush=True)
+        
+        for i, script in enumerate(scripts):
+            script_text = script.text
+            if '"offers"' in script_text and '"price"' in script_text:
+                price_match = re.search(r'"price":\s*([0-9]+\.?[0-9]*)', script_text)
                 if price_match:
-                    return float(price_match.group(1))
+                    preco_extraído = float(price_match.group(1))
+                    print(f"DEBUG CRON: Preço extraído do JSON-LD (script {i}): {preco_extraído}", flush=True)
+                    return preco_extraído
 
         # Estratégia 2: Seletores de Detalhes (PDP) revisados
         selectors = [
@@ -57,12 +110,18 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
         
         for sel in selectors:
             el = soup.select_one(sel)
-            if not el: continue
+            if not el: 
+                continue
             
             if el.name == "meta":
                 val = el.get("content")
-                if val: 
-                    return float(val)
+                if val:
+                    try:
+                        preco_extraído = float(val)
+                        print(f"DEBUG CRON: Preço extraído do meta '{sel}': {preco_extraído}", flush=True)
+                        return preco_extraído
+                    except ValueError:
+                        continue
             else:
                 txt = el.get_text(strip=True)
                 # Tenta pegar centavos no mesmo container
@@ -73,18 +132,35 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
                 
                 norm = _extrair_preco_from_text(txt)
                 if norm:
-                    return float(norm)
+                    try:
+                        preco_extraído = float(norm)
+                        print(f"DEBUG CRON: Preço extraído do CSS '{sel}': {preco_extraído}", flush=True)
+                        return preco_extraído
+                    except ValueError:
+                        continue
 
-        # 3. Fallback Regex no texto visivel 
+        # 3. Fallback Regex no texto visível 
         full = soup.get_text(" ", strip=True)
         m = re.search(r"R\$\s*([\d\.,]+)", full)
         if m:
             norm = _extrair_preco_from_text(m.group(0))
             if norm:
-                return float(norm)
+                try:
+                    preco_extraído = float(norm)
+                    print(f"DEBUG CRON: Preço extraído do regex fallback: {preco_extraído}", flush=True)
+                    return preco_extraído
+                except ValueError:
+                    pass
+        
+        # Se é um link encurtado (click1.mercadolivre), precisamos de um tratamento especial
+        if "click1.mercadolivre.com" in link_limpo or "click.mercadolivre.com" in link_limpo:
+            print(f"DEBUG CRON: [ALERTA] Link encurtado detectado - não conseguiu extrair preço", flush=True)
+            print(f"DEBUG CRON: [ALERTA] URL original: {link_limpo[:100]}", flush=True)
 
     except Exception as e:
-        print(f"DEBUG CRON: Erro ao acessar link direto {link}: {e}", flush=True)
+        print(f"DEBUG CRON: Erro ao acessar link direto {link}: {str(e)}", flush=True)
+    
+    print(f"DEBUG CRON: Falha total na extração de preço para {link_limpo[:60]}", flush=True)
     return None
 
 def buscar_promocoes_para_favoritos() -> None:
@@ -101,6 +177,7 @@ def buscar_promocoes_para_favoritos() -> None:
         total += 1
         produto_nome = doc.get("produto_nome")
         produto_link = doc.get("produto_link")
+        produto_id = doc.get("produto_id")
         preco_atual = doc.get("produto_preco", 0.0)
 
         if not produto_link:
@@ -111,8 +188,27 @@ def buscar_promocoes_para_favoritos() -> None:
         # Tenta extrair o preco usando a logica
         novo_valor = extrair_preco_pelo_link_direto(produto_link)
 
+        # Fallback inteligente: se falhou e temos produto_id, reconstrói um link direto
+        if novo_valor is None and produto_id:
+            print(f"DEBUG CRON: Extração falhou para link original, tentando com produto_id...", flush=True)
+            # Produto_id pode vir como "MLB31067313" ou "31067313", precisamos do número puro
+            id_numero = str(produto_id).replace("MLB", "").replace("mlb", "")
+            link_alternativo = f"https://www.mercadolivre.com.br/p/{id_numero}"
+            novo_valor = extrair_preco_pelo_link_direto(link_alternativo)
+            if novo_valor is not None:
+                print(f"DEBUG CRON: ✓ Sucesso! Preço extraído via produto_id: {novo_valor}", flush=True)
+        
+        # Ultra-fallback: se ainda falhou, tentar com o nome (último recurso)
+        if novo_valor is None and produto_nome:
+            print(f"DEBUG CRON: Espera crítica - tentando busca por nome do produto...", flush=True)
+            # Gerar uma URL de busca a partir do nome
+            nome_limpo = produto_nome.lower().replace(" ", "-")[:50]
+            link_busca = f"https://www.mercadolivre.com.br/ofertas#{nome_limpo}"
+            print(f"DEBUG CRON: [Fallback crítico] Tentando: {link_busca[:60]}", flush=True)
+            # Não tenta usar o link de busca diretamente, apenas como último recurso avisa
+
         if novo_valor is None:
-            print(f"DEBUG CRON: Preco nao encontrado para {produto_link}", flush=True)
+            print(f"DEBUG CRON: Preco nao encontrado para {produto_link[:80]}", flush=True)
             continue
 
         print(f"DEBUG CRON: Precos -> Banco: {preco_atual} | ML: {novo_valor}", flush=True)
@@ -136,7 +232,7 @@ def buscar_promocoes_para_favoritos() -> None:
                 EmailFeature.enviar_promocao(
                     usuario_email=destinatario_email,
                     usuario_nome=destinatario_email.split("@")[0],
-                    titulo_promocao=f"O pre�o de {produto_nome} caiu!",
+                    titulo_promocao=f"O preco de {produto_nome} caiu!",
                     link_promocao=produto_link,
                     empresa_nome="Mercado Livre"
                 )

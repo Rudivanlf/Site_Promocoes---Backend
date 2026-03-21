@@ -1,15 +1,23 @@
 import logging
+import os
+import time
+import random
 import re
-import requests
-import traceback
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit, urlunsplit
+
 from bs4 import BeautifulSoup
-from typing import List, Dict
 
 from ..favoritos.services import FavoritoService
 from ..email.email import EmailFeature
-from ..usuarios.services import UsuarioService
+from app.shared.clients.mercadolivre import resilient_get
 
 logger = logging.getLogger(__name__)
+
+MAX_PRODUTOS_POR_CICLO = int(os.getenv("ML_MAX_PRODUCTS_PER_CYCLE", "30"))
+INTERVALO_SUCESSO_MIN = int(os.getenv("ML_SUCCESS_RECHECK_MINUTES", "120"))
+INTERVALO_FALHA_MIN = int(os.getenv("ML_FAILURE_RECHECK_MINUTES", "240"))
+JITTER_MIN = int(os.getenv("ML_RECHECK_JITTER_MINUTES", "25"))
 
 # --- FUNÇÕES UTILITÁRIAS PARA O SCRAPER DE FAVORITOS ---
 HEADERS = {
@@ -50,23 +58,52 @@ def _extrair_preco_from_text(text: str) -> str | None:
 
 def expandir_link_encurtado(link: str) -> str:
     if not ("click" in link and "mercadolivre.com" in link):
-        return link  
-    
-    try:
-        HEADERS_MINIMAL = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15",
-            "Accept": "text/html",
-        }
-        res = requests.get(link, headers=HEADERS_MINIMAL, timeout=10, allow_redirects=True, stream=False)
-        final_url = res.url
-        
-        if final_url and final_url != link and "mercadolivre.com" in final_url:
-            print(f"DEBUG CRON: Link expandido de {link[:60]} para {final_url[:60]}", flush=True)
-            return final_url
-    except Exception as e:
-        print(f"DEBUG CRON: Erro ao expandir link {link[:60]}: {type(e).__name__}", flush=True)
-    
+        return link
+
+    headers_minimal = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15",
+        "Accept": "text/html",
+    }
+    res = resilient_get(
+        link,
+        headers=headers_minimal,
+        timeout=10,
+        allow_redirects=True,
+        stream=False,
+    )
+    if res is None:
+        return link
+
+    final_url = res.url
+    if final_url and final_url != link and "mercadolivre.com" in final_url:
+        print(f"DEBUG CRON: Link expandido de {link[:60]} para {final_url[:60]}", flush=True)
+        return final_url
+
     return link
+
+
+def _normalizar_chave_produto(link: str) -> str:
+    try:
+        partes = urlsplit((link or "").strip())
+        netloc = partes.netloc.lower().replace("www.", "")
+        caminho = partes.path.rstrip("/")
+        return urlunsplit((partes.scheme.lower() or "https", netloc, caminho, "", ""))
+    except Exception:
+        return (link or "").split("#")[0].split("?")[0].strip()
+
+
+def _to_utc_datetime(valor) -> datetime | None:
+    if isinstance(valor, datetime):
+        if valor.tzinfo is None:
+            return valor.replace(tzinfo=timezone.utc)
+        return valor.astimezone(timezone.utc)
+    return None
+
+
+def _calcular_proxima_verificacao(sucesso: bool) -> datetime:
+    base = INTERVALO_SUCESSO_MIN if sucesso else INTERVALO_FALHA_MIN
+    jitter = random.randint(0, max(0, JITTER_MIN))
+    return datetime.now(timezone.utc) + timedelta(minutes=base + jitter)
 
 def extrair_preco_pelo_link_direto(link: str) -> float | None:
     try:
@@ -87,7 +124,14 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
             "Accept-Language": "pt-BR,pt;q=0.9",
         }
 
-        res = requests.get(link_limpo, headers=HEADERS_PROD, timeout=15, allow_redirects=True)
+        res = resilient_get(
+            link_limpo,
+            headers=HEADERS_PROD,
+            timeout=15,
+            allow_redirects=True,
+        )
+        if res is None:
+            return None
 
         if res.status_code != 200 or "captcha" in res.text.lower() or len(res.text) < 100:
             return None
@@ -149,58 +193,139 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
 
     except Exception:
         pass
-    
+
     return None
 
-def buscar_promocoes_para_favoritos() -> None:
+def buscar_promocoes_para_favoritos() -> tuple[int, int]:
     print("DEBUG CRON: Iniciando tarefa de busca de promoções...", flush=True)
 
     fav_service = FavoritoService()
     cursor = fav_service.collection.find({})
+    agora = datetime.datetime.now(datetime.timezone.utc) # Certifique-se de ter essa variável
 
+    agrupados = {}
     total = 0
     atualizados = 0
 
+    # 1. FASE RÁPIDA: Apenas lê o banco e agrupa (SEM REQUESTS, SEM SLEEP)
     for doc in cursor:
         total += 1
-        produto_nome = doc.get("produto_nome")
         produto_link = doc.get("produto_link")
-        preco_atual = doc.get("produto_preco", 0.0)
 
         if not produto_link:
             continue
         
-        novo_valor = extrair_preco_pelo_link_direto(produto_link)
-
-        if novo_valor is None:
+        # NOTE QUE TIREI O REQUEST E O SLEEP DAQUI
+        
+        chave = _normalizar_chave_produto(produto_link)
+        if not chave:
             continue
 
-        if novo_valor < (preco_atual - 0.01):
-            destinatario_email = doc.get("usuario_email")
-            if not destinatario_email:
-                continue
+        if chave not in agrupados:
+            agrupados[chave] = {
+                "link": produto_link,
+                "docs": [],
+                "proxima_verificacao": None,
+            }
+        agrupados[chave]["docs"].append(doc)
 
-            atualizados += 1
-            fav_service.collection.update_one(
-                {"_id": doc["_id"]},
-                {"$set": {"produto_preco": novo_valor}},
-            )
-            
-            try:
-                EmailFeature.enviar_promocao(
-                    usuario_email=destinatario_email,
-                    usuario_nome=destinatario_email.split("@")[0],
-                    titulo_promocao=f"O preco de {produto_nome} caiu!",
-                    link_promocao=produto_link,
-                    empresa_nome="Mercado Livre"
-                )
-            except Exception:
-                pass
+        proxima_str = doc.get("proxima_verificacao_em")
+        proxima = _to_utc_datetime(proxima_str) if proxima_str else None
+        atual = agrupados[chave]["proxima_verificacao"]
         
-        elif novo_valor > (preco_atual + 0.01):
+        if proxima and (atual is None or proxima > atual):
+            agrupados[chave]["proxima_verificacao"] = proxima
+
+    # 2. FASE DE FILTRO: Escolhe quem vai ser processado neste ciclo
+    candidatos = []
+    for item in agrupados.values():
+        proxima = item.get("proxima_verificacao")
+        if proxima and proxima > agora:
+            continue
+        candidatos.append(item)
+
+    if len(candidatos) > MAX_PRODUTOS_POR_CICLO:
+        random.shuffle(candidatos)
+        candidatos = candidatos[:MAX_PRODUTOS_POR_CICLO]
+
+    logger.info(
+        "Favoritos: total=%s, produtos_unicos=%s, candidatos=%s, limite_ciclo=%s",
+        total, len(agrupados), len(candidatos), MAX_PRODUTOS_POR_CICLO
+    )
+
+    # 3. FASE LENTA: Processa APENAS o lote limitado (AQUI ENTRA O SLEEP E O REQUEST)
+    for item in candidatos:
+        link_base = item["link"]
+        docs = item["docs"]
+        
+        # --- PAUSA AQUI ---
+        # Dorme um tempo aleatório para enganar o WAF entre um produto e outro
+        time.sleep(random.uniform(2.0, 5.0))
+        
+        # Faz UMA ÚNICA requisição para o link que serve para todos os usuários com esse favorito
+        novo_valor = extrair_preco_pelo_link_direto(link_base)
+
+        if novo_valor is None:
+            proxima_falha = _calcular_proxima_verificacao(sucesso=False)
+            for doc in docs:
+                fav_service.collection.update_one(
+                    {"_id": doc["_id"]},
+                    {
+                        "$set": {
+                            "ultima_verificacao_em": agora,
+                            "proxima_verificacao_em": proxima_falha,
+                            "ultima_verificacao_status": "falha",
+                        },
+                        "$inc": {"falhas_consecutivas": 1},
+                    },
+                )
+            continue
+
+        proxima_sucesso = _calcular_proxima_verificacao(sucesso=True)
+
+        for doc in docs:
+            produto_nome = doc.get("produto_nome")
+            produto_link = doc.get("produto_link")
+            preco_atual = doc.get("produto_preco", 0.0)
+
             fav_service.collection.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {"produto_preco": novo_valor}},
+                {
+                    "$set": {
+                        "ultima_verificacao_em": agora,
+                        "proxima_verificacao_em": proxima_sucesso,
+                        "ultima_verificacao_status": "ok",
+                    },
+                    "$unset": {"falhas_consecutivas": ""},
+                },
             )
+
+            if novo_valor < (preco_atual - 0.01):
+                destinatario_email = doc.get("usuario_email")
+                if not destinatario_email:
+                    continue
+
+                atualizados += 1
+                fav_service.collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"produto_preco": novo_valor}},
+                )
+
+                try:
+                    EmailFeature.enviar_promocao(
+                        usuario_email=destinatario_email,
+                        usuario_nome=destinatario_email.split("@")[0],
+                        titulo_promocao=f"O preco de {produto_nome} caiu!",
+                        link_promocao=produto_link,
+                        empresa_nome="Mercado Livre",
+                    )
+                except Exception:
+                    pass
+
+            elif novo_valor > (preco_atual + 0.01):
+                fav_service.collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"produto_preco": novo_valor}},
+                )
 
     return total, atualizados

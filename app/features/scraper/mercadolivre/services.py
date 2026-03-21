@@ -1,18 +1,13 @@
 import re
-import requests
+import logging
 from bs4 import BeautifulSoup
 
+from app.shared.clients.mercadolivre import DEFAULT_HEADERS, resilient_get
+
+logger = logging.getLogger(__name__)
 
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/122.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pt-BR,pt;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
+HEADERS = DEFAULT_HEADERS
 
 ML_SEARCH_URL = "https://lista.mercadolivre.com.br/{query}"
 
@@ -190,11 +185,20 @@ def buscar_produtos_basic(query: str, pagina: int = 1) -> list[dict]:
         offset = (pagina - 1) * 48 + 1
         url = f"{url}_Desde_{offset}"
 
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise ConnectionError(f"Erro ao acessar o Mercado Livre: {exc}") from exc
+    response = resilient_get(
+        url,
+        headers=HEADERS,
+        timeout=8,
+        max_retries=0,
+        wait_for_circuit=False,
+    )
+    if response is None or response.status_code >= 400:
+        logger.warning(
+            "Mercado Livre indisponivel no momento para query=%s pagina=%s",
+            query,
+            pagina,
+        )
+        raise ConnectionError("Fonte Mercado Livre indisponivel no momento")
 
     soup = BeautifulSoup(response.text, "lxml")
 
@@ -239,8 +243,15 @@ def buscar_produtos(query: str, pagina: int = 1, detalhes: bool = False) -> list
         if not link:
             continue
         try:
-            rp = requests.get(link, headers=HEADERS, timeout=12)
-            rp.raise_for_status()
+            rp = resilient_get(
+                link,
+                headers=HEADERS,
+                timeout=8,
+                max_retries=0,
+                wait_for_circuit=False,
+            )
+            if rp is None or rp.status_code >= 400:
+                continue
             soup = BeautifulSoup(rp.text, "lxml")
             selectors = [
                 ".ui-pdp-price__second-line .andes-money-amount__fraction",

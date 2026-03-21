@@ -21,7 +21,7 @@ from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
 # Sessão com cache de certificados do Google — evita buscar os certs a cada requisição
-_google_session = _http_session.session()
+_google_session = _http_session.Session()
 _google_cached_session = cachecontrol.CacheControl(_google_session)
 
 from .models import validate_usuario_data, validate_login_data

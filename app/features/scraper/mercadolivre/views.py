@@ -33,8 +33,12 @@ class BuscarProdutosMercadoLivreView(APIView):
             produtos = buscar_produtos(query=query, pagina=pagina, detalhes=detalhes)
         except ConnectionError as exc:
             return Response(
-                {"erro": str(exc)},
-                status=status.HTTP_502_BAD_GATEWAY,
+                {
+                    "erro": str(exc),
+                    "source_unavailable": True,
+                    "source": "mercadolivre",
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
        # envia notificação por e-mail para usuários autenticados

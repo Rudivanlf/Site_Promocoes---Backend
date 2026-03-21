@@ -68,6 +68,9 @@ class FavoritoService:
             "produto_categoria": data.get("category", ""),
             "produto_id": data.get("id"),
             "data_favoritado": datetime.datetime.now(datetime.timezone.utc),
+            "ultima_verificacao_em": None,
+            "proxima_verificacao_em": None,
+            "ultima_verificacao_status": "pendente",
         }
 
         self.collection.insert_one(doc)

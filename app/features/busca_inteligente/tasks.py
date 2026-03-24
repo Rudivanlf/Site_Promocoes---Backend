@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 from bs4 import BeautifulSoup
 
 from ..favoritos.services import FavoritoService
+from ..historico_precos.price_history import record_price
 from ..email.email import EmailFeature
 from app.shared.clients.mercadolivre import resilient_get
 
@@ -201,7 +202,7 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
 
     fav_service = FavoritoService()
     cursor = fav_service.collection.find({})
-    agora = datetime.datetime.now(datetime.timezone.utc) # Certifique-se de ter essa variável
+    agora = datetime.now(timezone.utc)
 
     agrupados = {}
     total = 0
@@ -310,6 +311,12 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
                     {"_id": doc["_id"]},
                     {"$set": {"produto_preco": novo_valor}},
                 )
+                record_price(
+                    link=produto_link,
+                    name=produto_nome,
+                    image=doc.get("produto_imagem", ""),
+                    price=novo_valor,
+                )
 
                 try:
                     EmailFeature.enviar_promocao(
@@ -326,6 +333,12 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
                 fav_service.collection.update_one(
                     {"_id": doc["_id"]},
                     {"$set": {"produto_preco": novo_valor}},
+                )
+                record_price(
+                    link=produto_link,
+                    name=produto_nome,
+                    image=doc.get("produto_imagem", ""),
+                    price=novo_valor,
                 )
 
     return total, atualizados

@@ -46,7 +46,7 @@ def cron_verificar_precos(request):
         _cron_running = True
 
     # Chama o _run_cron_job em vez de buscar_promocoes_para_favoritos
-    threading.Thread(target=_run_cron_job).start()
+    threading.Thread(target=_run_cron_job, daemon=True).start()
     
     return JsonResponse({
         "status": "iniciado",

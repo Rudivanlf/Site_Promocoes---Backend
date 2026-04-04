@@ -56,9 +56,9 @@ DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
-_RPS = float(os.getenv("ML_MAX_RPS", "0.35"))
+_RPS = float(os.getenv("ML_MAX_RPS", "0.15"))
 _MAX_RETRIES = int(os.getenv("ML_MAX_RETRIES", "3"))
-_BACKOFF_BASE_SECONDS = float(os.getenv("ML_BACKOFF_BASE_SECONDS", "2.0"))
+_BACKOFF_BASE_SECONDS = float(os.getenv("ML_BACKOFF_BASE_SECONDS", "5.0"))
 _BLOCK_THRESHOLD = int(os.getenv("ML_CIRCUIT_THRESHOLD", "3"))
 _CIRCUIT_SECONDS = int(os.getenv("ML_CIRCUIT_SECONDS", "180"))
 

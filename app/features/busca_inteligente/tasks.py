@@ -261,7 +261,7 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
         
         # --- PAUSA AQUI ---
         # Dorme um tempo aleatório para enganar o WAF entre um produto e outro
-        time.sleep(random.uniform(2.0, 5.0))
+        time.sleep(random.uniform(8.0, 15.0))
         
         # Faz UMA ÚNICA requisição para o link que serve para todos os usuários com esse favorito
         novo_valor = extrair_preco_pelo_link_direto(link_base)

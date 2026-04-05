@@ -1,6 +1,6 @@
 import logging
 import re
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urljoin
 
 from bs4 import BeautifulSoup
 from curl_cffi import requests
@@ -91,10 +91,15 @@ def _extrair_link(item) -> str | None:
     if not href:
         return None
 
-    if href.startswith("http"):
+    href = href.strip()
+    if href.startswith("//"):
+        return f"https:{href}"
+    if href.startswith("http://") or href.startswith("https://"):
         return href
+    if href.startswith("/"):
+        return urljoin(AMAZON_BASE_URL, href)
 
-    return f"{AMAZON_BASE_URL}{href}"
+    return urljoin(AMAZON_BASE_URL, href)
 
 
 def _extrair_imagem(item) -> str | None:

@@ -1,5 +1,6 @@
 import re
 import logging
+from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import requests
 from curl_cffi import requests
@@ -102,30 +103,48 @@ def _extrair_preco(container) -> dict:
 def _extrair_preco_from_text(text: str) -> str | None:
     if not text:
         return None
-    s = text.strip()
-    s = s.replace("R$", "").replace("\xa0", "").replace(" ", "")
-    m = re.search(r"[\d\.,]+", s)
-    if not m:
-        return None
-    num = m.group(0)
-    if "," in num:
-        if "." in num:
-            num = num.replace(".", "").replace(",", ".")
-        else:
-            num = num.replace(",", ".")
-    else:
-        num = num.replace(".", "")
 
-    if "." in num:
-        integer, frac = num.rsplit(".", 1)
-        if len(frac) == 1:
-            frac = frac + "0"
-        elif len(frac) == 0:
-            frac = "00"
-        num = f"{integer}.{frac}"
+    s = text.strip().replace("R$", "").replace("U$", "")
+    s = s.replace("\xa0", " ").replace("\u202f", " ")
+    s = re.sub(r"[^\d\.,]", "", s)
+    if not s:
+        return None
+
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        integer, sep, fraction = s.rpartition(",")
+        if len(fraction) in (1, 2):
+            s = f"{integer.replace('.', '')}.{fraction}"
+        else:
+            s = s.replace(",", "")
+    elif "." in s:
+        integer, sep, fraction = s.rpartition(".")
+        if len(fraction) in (1, 2):
+            s = f"{integer.replace('.', '')}.{fraction}"
+        else:
+            s = s.replace(".", "")
+
+    s = s.strip(".")
+    if not s:
+        return None
+
+    if "." not in s:
+        s = f"{s}.00"
     else:
-        num = f"{num}.00"
-    return num
+        integer, fraction = s.rsplit(".", 1)
+        if len(fraction) == 0:
+            fraction = "00"
+        elif len(fraction) == 1:
+            fraction = f"{fraction}0"
+        else:
+            fraction = fraction[:2]
+        s = f"{integer}.{fraction}"
+
+    return s
 
 
 def _extrair_imagem(container) -> str | None:
@@ -137,13 +156,30 @@ def _extrair_imagem(container) -> str | None:
     return None
 
 
+def _normalizar_link(href: str | None) -> str | None:
+    if not href:
+        return None
+
+    href = href.strip()
+    if href.startswith("//"):
+        return f"https:{href}"
+    if href.startswith("/"):
+        return urljoin("https://www.mercadolivre.com.br", href)
+    if href.startswith("http://") or href.startswith("https://"):
+        return href
+    if href.startswith("mercadolivre"):
+        return f"https://{href}"
+
+    return href
+
+
 def _extrair_link(container) -> str | None:
     link = container.select_one("a.poly-card__portada")
     if not link:
         link = container.select_one("a[href*='mercadolivre']")
     if not link:
         link = container.select_one("a[href]")
-    return link.get("href") if link else None
+    return _normalizar_link(link.get("href") if link else None)
 
 
 def _extrair_titulo(container) -> str | None:

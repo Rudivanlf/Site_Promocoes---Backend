@@ -13,6 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .services import FavoritoService
 from ..utils import parse_request_body, autenticar_jwt
 from app.features.email.email import EmailFeature
+from app.features.busca_inteligente.tasks import extrair_dados_produto_pelo_link
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -60,6 +61,22 @@ class FavoritoView(View):
         # Validações obrigatórias
         if not data.get("link"):
             return JsonResponse({"error": "Campo 'link' é obrigatório"}, status=400)
+
+        link = data.get("link", "").strip()
+        if not data.get("name") or not data.get("price") or not data.get("image"):
+            try:
+                dados_extraidos = extrair_dados_produto_pelo_link(link)
+                if dados_extraidos:
+                    data.setdefault("name", dados_extraidos.get("name", ""))
+                    data.setdefault("price", dados_extraidos.get("price", 0))
+                    data.setdefault("image", dados_extraidos.get("image", ""))
+                    data.setdefault("description", dados_extraidos.get("description", ""))
+            except Exception as e:
+                print(f"DEBUG: Falha ao extrair dados do link {link}: {e}")
+
+        data.setdefault("target_price", data.get("price"))
+
+        # Validações após possível extração
         if not data.get("name"):
             return JsonResponse({"error": "Campo 'name' é obrigatório"}, status=400)
         if data.get("price") is None:
@@ -68,6 +85,11 @@ class FavoritoView(View):
             float(data["price"])
         except (ValueError, TypeError):
             return JsonResponse({"error": "Campo 'price' deve ser um número"}, status=400)
+        if data.get("target_price") is not None:
+            try:
+                float(data["target_price"])
+            except (ValueError, TypeError):
+                return JsonResponse({"error": "Campo 'target_price' deve ser um número"}, status=400)
 
         try:
             favorito = self.service.adicionar(

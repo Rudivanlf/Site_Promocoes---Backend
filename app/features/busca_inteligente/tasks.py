@@ -197,6 +197,106 @@ def extrair_preco_pelo_link_direto(link: str) -> float | None:
 
     return None
 
+def extrair_dados_produto_pelo_link(link: str) -> dict | None:
+    """
+    Extrai dados básicos de um produto a partir do link direto.
+    Retorna dict com 'name', 'price', 'image', 'description' ou None se falhar.
+    """
+    try:
+        link_limpo = link.split('#')[0].strip()
+        if not link_limpo:
+            return None
+
+        # Expandir links encurtados do Mercado Livre
+        if "click" in link_limpo and "mercadolivre.com" in link_limpo:
+            link_expandido = expandir_link_encurtado(link_limpo)
+            if link_expandido != link_limpo:
+                if "/gz/account-verification" not in link_expandido and "/login" not in link_expandido:
+                    link_limpo = link_expandido
+                else:
+                    return None
+
+        HEADERS_PROD = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "pt-BR,pt;q=0.9",
+        }
+
+        res = resilient_get(
+            link_limpo,
+            headers=HEADERS_PROD,
+            timeout=15,
+            allow_redirects=True,
+        )
+        if res is None or res.status_code != 200:
+            return None
+
+        if "captcha" in res.text.lower() or len(res.text) < 100:
+            return None
+
+        soup = BeautifulSoup(res.text, "lxml")
+
+        dados = {}
+
+        # Extrair nome/título
+        title_selectors = [
+            "h1.ui-pdp-title",
+            ".ui-pdp-header__title",
+            "meta[property='og:title']",
+            "meta[name='title']",
+            "title"
+        ]
+        for sel in title_selectors:
+            el = soup.select_one(sel)
+            if el:
+                if el.name == "meta":
+                    title = el.get("content")
+                else:
+                    title = el.get_text(strip=True)
+                if title and len(title) > 3:
+                    dados["name"] = title
+                    break
+
+        # Extrair preço
+        preco = extrair_preco_pelo_link_direto(link_limpo)
+        if preco:
+            dados["price"] = preco
+
+        # Extrair imagem
+        image_selectors = [
+            "img.ui-pdp-image",
+            ".ui-pdp-gallery__figure img",
+            "meta[property='og:image']",
+            "meta[name='twitter:image']",
+            ".gallery img"
+        ]
+        for sel in image_selectors:
+            el = soup.select_one(sel)
+            if el:
+                img_url = el.get("src") or el.get("data-src") or el.get("content")
+                if img_url and "http" in img_url:
+                    dados["image"] = img_url
+                    break
+
+        # Extrair descrição
+        desc_selectors = [
+            ".ui-pdp-description",
+            "meta[property='og:description']",
+            "meta[name='description']"
+        ]
+        for sel in desc_selectors:
+            el = soup.select_one(sel)
+            if el:
+                desc = el.get("content") or el.get_text(strip=True)
+                if desc and len(desc) > 10:
+                    dados["description"] = desc[:500]  # Limitar tamanho
+                    break
+
+        return dados if dados else None
+
+    except Exception as e:
+        print(f"Erro ao extrair dados do link {link}: {e}")
+        return None
+
 def buscar_promocoes_para_favoritos() -> tuple[int, int]:
     print("DEBUG CRON: Iniciando tarefa de busca de promoções...", flush=True)
 
@@ -288,7 +388,9 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
             produto_nome = doc.get("produto_nome")
             produto_link = doc.get("produto_link")
             preco_atual = doc.get("produto_preco", 0.0)
+            preco_alvo = doc.get("produto_preco_alvo", preco_atual)
 
+            # Sempre atualiza o preço
             fav_service.collection.update_one(
                 {"_id": doc["_id"]},
                 {
@@ -296,49 +398,32 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
                         "ultima_verificacao_em": agora,
                         "proxima_verificacao_em": proxima_sucesso,
                         "ultima_verificacao_status": "ok",
+                        "produto_preco": novo_valor,
                     },
                     "$unset": {"falhas_consecutivas": ""},
                 },
             )
+            record_price(
+                link=produto_link,
+                name=produto_nome,
+                image=doc.get("produto_imagem", ""),
+                price=novo_valor,
+            )
 
-            if novo_valor < (preco_atual - 0.01):
-                destinatario_email = doc.get("usuario_email")
-                if not destinatario_email:
-                    continue
-
+            # Envia e-mail se o preço atingiu ou ficou abaixo do alvo
+            if novo_valor <= preco_alvo and preco_atual > preco_alvo:
                 atualizados += 1
-                fav_service.collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"produto_preco": novo_valor}},
-                )
-                record_price(
-                    link=produto_link,
-                    name=produto_nome,
-                    image=doc.get("produto_imagem", ""),
-                    price=novo_valor,
-                )
-
-                try:
-                    EmailFeature.enviar_promocao(
-                        usuario_email=destinatario_email,
-                        usuario_nome=destinatario_email.split("@")[0],
-                        titulo_promocao=f"O preco de {produto_nome} caiu!",
-                        link_promocao=produto_link,
-                        empresa_nome="Mercado Livre",
-                    )
-                except Exception:
-                    pass
-
-            elif novo_valor > (preco_atual + 0.01):
-                fav_service.collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"produto_preco": novo_valor}},
-                )
-                record_price(
-                    link=produto_link,
-                    name=produto_nome,
-                    image=doc.get("produto_imagem", ""),
-                    price=novo_valor,
-                )
+                destinatario_email = doc.get("usuario_email")
+                if destinatario_email:
+                    try:
+                        EmailFeature.enviar_promocao(
+                            usuario_email=destinatario_email,
+                            usuario_nome=destinatario_email.split("@")[0],
+                            titulo_promocao=f"O preço de {produto_nome} atingiu seu alvo!",
+                            link_promocao=produto_link,
+                            empresa_nome="Mercado Livre",
+                        )
+                    except Exception:
+                        pass
 
     return total, atualizados

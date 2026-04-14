@@ -1,5 +1,6 @@
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from urllib.parse import quote_plus, urljoin
 
 from bs4 import BeautifulSoup
@@ -43,7 +44,25 @@ def _normalizar_preco(text: str | None) -> str | None:
             frac = "00"
         num = f"{inteiro}.{frac}"
 
-    return num
+    try:
+        valor = Decimal(num)
+    except InvalidOperation:
+        return None
+
+    # Ignora capturas incorretas de blocos promocionais/placeholder com valor zero.
+    if valor <= 0:
+        return None
+
+    return f"{valor:.2f}"
+
+
+def _preco_positivo(preco: str | None) -> bool:
+    if not preco:
+        return False
+    try:
+        return Decimal(preco) > 0
+    except (InvalidOperation, ValueError):
+        return False
 
 
 def _extrair_preco_card(item) -> dict:
@@ -60,9 +79,12 @@ def _extrair_preco_card(item) -> dict:
             preco = _normalizar_preco(f"{whole_txt},{frac_txt}")
 
     if not preco:
-        preco_offscreen = item.select_one("span.a-price span.a-offscreen")
-        if preco_offscreen:
-            preco = _normalizar_preco(preco_offscreen.get_text(strip=True))
+        candidatos = item.select("span.a-price span.a-offscreen")
+        for candidato in candidatos:
+            preco_normalizado = _normalizar_preco(candidato.get_text(strip=True))
+            if preco_normalizado:
+                preco = preco_normalizado
+                break
 
     preco_anterior = item.select_one("span.a-price.a-text-price span.a-offscreen")
     if preco_anterior:
@@ -192,7 +214,7 @@ def buscar_produtos_basic(query: str, pagina: int = 1) -> list[dict]:
 def buscar_produtos(query: str, pagina: int = 1, detalhes: bool = False) -> list[dict]:
     produtos = buscar_produtos_basic(query=query, pagina=pagina)
     if not detalhes:
-        return produtos
+        return [p for p in produtos if _preco_positivo(p.get("preco"))]
 
     for produto in produtos:
         link = produto.get("link")
@@ -227,4 +249,4 @@ def buscar_produtos(query: str, pagina: int = 1, detalhes: bool = False) -> list
             # Falha de detalhes em um produto nao interrompe a lista inteira.
             continue
 
-    return produtos
+    return [p for p in produtos if _preco_positivo(p.get("preco"))]

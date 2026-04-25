@@ -165,6 +165,9 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "app.shared.authentication.BearerJWTAuthentication",
+    ],
 }
 
 
@@ -189,3 +192,15 @@ GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
 # JWT Secret Key
 JWT_SECRET = os.environ.get("JWT_SECRET", SECRET_KEY)
 JWT_ALGORITHM = "HS256"
+
+
+# AI providers
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+
+AGENT_PROVIDERS = {
+    "gemini": {
+        "api_key": GEMINI_API_KEY,
+        "model": GEMINI_MODEL,
+    }
+}

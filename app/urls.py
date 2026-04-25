@@ -70,4 +70,5 @@ urlpatterns = [
     path("api/scraper/amazon/", include("app.features.scraper.amazon.urls")),
     path("api/scraper/kabum/", include("app.features.scraper.kabum.urls")),
     path("api/scraper/", include("app.features.historico_precos.urls")),
+    path("api/ia/", include("IA.urls")),
 ]

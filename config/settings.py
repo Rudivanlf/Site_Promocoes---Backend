@@ -196,7 +196,7 @@ JWT_ALGORITHM = "HS256"
 
 # AI providers
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
 
 AGENT_PROVIDERS = {
     "gemini": {

@@ -78,7 +78,7 @@ class AgentService:
         AGENT_PROVIDERS = {
             "gemini": {
                 "api_key": "YOUR_KEY",
-                "model": "gemini-2.0-flash",   # optional
+                "model": "gemini-1.5-flash",   # optional
             }
         }
     """

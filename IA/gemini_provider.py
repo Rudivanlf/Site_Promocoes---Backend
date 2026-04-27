@@ -82,7 +82,7 @@ class GeminiProvider(BaseAgentProvider):
     Google Gemini provider.
 
     Usage:
-        provider = GeminiProvider(api_key="YOUR_KEY", model="gemini-2.0-flash")
+        provider = GeminiProvider(api_key="YOUR_KEY", model="gemini-1.5-flash")
         response = provider.chat(
             messages=[{"role": "user", "content": "Hello!"}],
             system_prompt="You are a helpful assistant.",
@@ -91,14 +91,14 @@ class GeminiProvider(BaseAgentProvider):
     """
 
     PROVIDER_NAME = "gemini"
-    DEFAULT_MODEL = "gemini-2.0-flash"
+    DEFAULT_MODEL = "gemini-1.5-flash"
 
     _DEFAULT_MAX_OUTPUT_TOKENS = 16384
     _MAX_CONTINUATIONS = 4
     _CONTINUATION_PROMPT = "Continue exactly from where you left off, without repeating anything already written."
 
     # Models that support thinking configuration
-    _THINKING_MODELS = ("gemini-2.5",)
+    _THINKING_MODELS = ("gemini-1.5",)
 
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL, **kwargs):
         super().__init__(api_key, model, **kwargs)

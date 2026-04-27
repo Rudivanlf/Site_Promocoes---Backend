@@ -32,7 +32,7 @@ def chat(request):
         {
             "content": "...",
             "provider": "gemini",
-            "model": "gemini-2.0-flash",
+            "model": "gemini-1.5-flash",
             "input_tokens": 10,
             "output_tokens": 42
         }
@@ -97,7 +97,7 @@ def list_providers(request):
     Response:
         {
             "providers": [
-                {"provider": "gemini", "default_model": "gemini-2.0-flash", "configured": true}
+                {"provider": "gemini", "default_model": "gemini-1.5-flash", "configured": true}
             ]
         }
     """

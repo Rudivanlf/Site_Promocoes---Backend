@@ -20,6 +20,15 @@ class AgentRequestSerializer(serializers.Serializer):
     api_key = serializers.CharField(required=False, default="", allow_blank=True, write_only=True)
     temperature = serializers.FloatField(required=False, default=0.7, min_value=0.0, max_value=2.0)
     max_tokens = serializers.IntegerField(required=False, default=2048, min_value=1)
+    auto_recommend = serializers.BooleanField(required=False, default=True)
+    sources = serializers.ListField(
+        child=serializers.ChoiceField(choices=["mercadolivre", "amazon", "kabum"]),
+        required=False,
+        allow_empty=True,
+    )
+    pagina = serializers.IntegerField(required=False, default=1, min_value=1)
+    limite_por_fonte = serializers.IntegerField(required=False, default=10, min_value=1, max_value=50)
+    max_resultados = serializers.IntegerField(required=False, default=5, min_value=1, max_value=10)
 
 
 class AgentResponseSerializer(serializers.Serializer):
@@ -28,3 +37,25 @@ class AgentResponseSerializer(serializers.Serializer):
     model = serializers.CharField()
     input_tokens = serializers.IntegerField()
     output_tokens = serializers.IntegerField()
+
+
+class RecommendRequestSerializer(serializers.Serializer):
+    query = serializers.CharField()
+    pedido = serializers.CharField()
+    sources = serializers.ListField(
+        child=serializers.ChoiceField(choices=["mercadolivre", "amazon", "kabum"]),
+        required=False,
+        allow_empty=True,
+    )
+    pagina = serializers.IntegerField(required=False, default=1, min_value=1)
+    limite_por_fonte = serializers.IntegerField(required=False, default=10, min_value=1, max_value=50)
+    max_resultados = serializers.IntegerField(required=False, default=5, min_value=1, max_value=10)
+    provider = serializers.ChoiceField(
+        choices=["gemini"],
+        required=False,
+        allow_null=True,
+        default=None,
+    )
+    model = serializers.CharField(required=False, default="", allow_blank=True)
+    temperature = serializers.FloatField(required=False, default=0.2, min_value=0.0, max_value=2.0)
+    max_tokens = serializers.IntegerField(required=False, default=2048, min_value=1)

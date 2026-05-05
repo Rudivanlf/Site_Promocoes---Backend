@@ -367,23 +367,27 @@ def _build_recommend_prompt(pedido: str, products: list[dict], max_resultados: i
     ], prompt
 
 
+def _strip_urls(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"https?://\S+|www\.\S+", "", str(text))
+    return " ".join(cleaned.split())
+
+
 def _render_recommendation_text(parsed: dict, max_resultados: int) -> str:
     if isinstance(parsed, dict) and isinstance(parsed.get("top"), list):
         lines = [
             "Encontrei boas opcoes para voce. Aqui vai um top rapido com o por que de cada escolha:",
         ]
         for idx, item in enumerate(parsed.get("top", [])[:max_resultados], start=1):
-            title = item.get("title", "")
-            reason = item.get("reason", "")
+            title = _strip_urls(item.get("title", ""))
+            reason = _strip_urls(item.get("reason", ""))
             price = item.get("price", "")
-            link = item.get("link", "")
             lines.append(f"{idx}) {title} | preco: {price} | {reason}")
-            if link:
-                lines.append(f"Link: {link}")
 
         notes = parsed.get("notes")
         if notes:
-            lines.append(f"Notas: {notes}")
+            lines.append(f"Notas: {_strip_urls(notes)}")
 
         lines.append("Se quiser, me diga seu orcamento, marca preferida ou uso principal para refinar.")
         return "\n".join(lines)

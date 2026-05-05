@@ -6,6 +6,7 @@ requests>=2.31
 curl_cffi>=0.7.0
 beautifulsoup4>=4.12
 lxml>=4.9
+playwright>=1.44
 psycopg2-binary>=2.9
 django-mongodb-backend>=0.1.0
 # MongoDB Driver

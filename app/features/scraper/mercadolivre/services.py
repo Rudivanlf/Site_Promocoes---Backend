@@ -1,3 +1,4 @@
+import json
 import re
 import logging
 from urllib.parse import urljoin
@@ -14,6 +15,11 @@ logger = logging.getLogger(__name__)
 HEADERS = DEFAULT_HEADERS
 
 ML_SEARCH_URL = "https://lista.mercadolivre.com.br/{query}"
+
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
 
 
 def _extrair_preco(container) -> dict:
@@ -216,6 +222,174 @@ def _extrair_avaliacao(container) -> dict:
     return {"nota": nota, "quantidade_avaliacoes": quantidade}
 
 
+def _extrair_produtos_json_ld(soup: BeautifulSoup) -> list[dict]:
+    produtos: list[dict] = []
+    scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+    for script in scripts:
+        payload = script.string or script.get_text(strip=True)
+        if not payload:
+            continue
+        try:
+            data = json.loads(payload)
+        except Exception:
+            continue
+
+        candidates: list[dict] = []
+        if isinstance(data, dict) and isinstance(data.get("itemListElement"), list):
+            candidates = data.get("itemListElement", [])
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and isinstance(item.get("itemListElement"), list):
+                    candidates = item.get("itemListElement", [])
+                    break
+
+        for entry in candidates:
+            if not isinstance(entry, dict):
+                continue
+            item = entry.get("item") if isinstance(entry.get("item"), dict) else entry
+            if not isinstance(item, dict):
+                continue
+
+            titulo = item.get("name")
+            if not titulo:
+                continue
+
+            link = item.get("url")
+            imagem = item.get("image")
+            if isinstance(imagem, list):
+                imagem = imagem[0] if imagem else None
+
+            preco = None
+            offers = item.get("offers") or {}
+            raw_price = offers.get("price")
+            if raw_price is not None:
+                preco = _extrair_preco_from_text(str(raw_price))
+
+            produtos.append({
+                "titulo": titulo,
+                "preco": preco,
+                "preco_original": None,
+                "desconto": None,
+                "imagem": imagem,
+                "link": _normalizar_link(link) if link else None,
+                "nota": None,
+                "quantidade_avaliacoes": None,
+            })
+
+    return produtos
+
+
+def _find_results_list(data) -> list[dict] | None:
+    if isinstance(data, dict):
+        results = data.get("results")
+        if isinstance(results, list):
+            return results
+        for value in data.values():
+            found = _find_results_list(value)
+            if found is not None:
+                return found
+    elif isinstance(data, list):
+        for item in data:
+            found = _find_results_list(item)
+            if found is not None:
+                return found
+    return None
+
+
+def _extrair_produtos_preloaded_state(soup: BeautifulSoup) -> list[dict]:
+    scripts = [
+        soup.find("script", attrs={"id": "__PRELOADED_STATE__"}),
+        soup.find("script", attrs={"id": "__INITIAL_STATE__"}),
+    ]
+    for script in scripts:
+        if not script:
+            continue
+        payload = script.string or script.get_text(strip=True)
+        if not payload:
+            continue
+        try:
+            data = json.loads(payload)
+        except Exception:
+            continue
+
+        results = _find_results_list(data)
+        if not results:
+            continue
+
+        produtos = []
+        seen_links = set()
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            titulo = item.get("title") or item.get("name")
+            link = item.get("permalink") or item.get("url")
+            if not titulo or not link:
+                continue
+            if "mercadolivre" not in link:
+                continue
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+
+            preco_val = item.get("price") or item.get("price_value") or item.get("priceValue")
+            preco = _extrair_preco_from_text(str(preco_val)) if preco_val is not None else None
+            original = item.get("original_price")
+            preco_original = _extrair_preco_from_text(str(original)) if original is not None else None
+
+            produtos.append({
+                "titulo": titulo,
+                "preco": preco,
+                "preco_original": preco_original,
+                "desconto": None,
+                "imagem": item.get("thumbnail") or item.get("picture_url") or item.get("image"),
+                "link": _normalizar_link(link),
+                "nota": None,
+                "quantidade_avaliacoes": None,
+            })
+
+        if produtos:
+            return produtos
+
+    return []
+
+
+def _is_js_challenge(html: str) -> bool:
+    if not html:
+        return False
+    lower = html.lower()
+    markers = [
+        "micro-landing-container",
+        "continue-button",
+        "_bmstate",
+        "_bmc=",
+        "this page requires javascript",
+    ]
+    return any(marker in lower for marker in markers)
+
+
+def _fetch_html_playwright(url: str) -> str | None:
+    if not url or sync_playwright is None:
+        return None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/122.0.0.0 Safari/537.36"
+                ),
+                locale="pt-BR",
+            )
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3500)
+            html = page.content()
+            browser.close()
+            return html
+    except Exception:
+        return None
+
+
 def buscar_produtos_basic(query: str, pagina: int = 1) -> list[dict]:
     # Formata a URL para o site visual do Mercado Livre
     query_formatada = query.strip().replace(" ", "-")
@@ -249,10 +423,38 @@ def buscar_produtos_basic(query: str, pagina: int = 1) -> list[dict]:
     soup = BeautifulSoup(response.text, "lxml")
 
     # Seletor principal dos resultados (o ML altera isso de vez em quando)
-    resultados = soup.select("li.ui-search-layout__item")
+    resultados = soup.select("li.ui-search-layout__item, li.ui-search-layout__stack-item")
     if not resultados:
         # Fallback para estrutura alternativa
-        resultados = soup.select("div.ui-search-result__wrapper")
+        resultados = soup.select("div.ui-search-result__wrapper, div.ui-search-result__content-wrapper")
+
+    if not resultados:
+        lower = (response.text or "").lower()
+        if any(marker in lower for marker in ["captcha", "account-verification", "/login", "access denied"]):
+            raise ConnectionError("Mercado Livre bloqueou a consulta (captcha/login).")
+
+        if _is_js_challenge(response.text):
+            html = _fetch_html_playwright(url)
+            if html:
+                soup = BeautifulSoup(html, "lxml")
+                resultados = soup.select("li.ui-search-layout__item, li.ui-search-layout__stack-item")
+                if not resultados:
+                    resultados = soup.select("div.ui-search-result__wrapper, div.ui-search-result__content-wrapper")
+                if not resultados:
+                    produtos_json = _extrair_produtos_json_ld(soup)
+                    if produtos_json:
+                        return produtos_json
+                    produtos_preloaded = _extrair_produtos_preloaded_state(soup)
+                    if produtos_preloaded:
+                        return produtos_preloaded
+
+        produtos_json = _extrair_produtos_json_ld(soup)
+        if produtos_json:
+            return produtos_json
+
+        produtos_preloaded = _extrair_produtos_preloaded_state(soup)
+        if produtos_preloaded:
+            return produtos_preloaded
 
     produtos = []
     for item in resultados:

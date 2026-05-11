@@ -9,7 +9,6 @@ from urllib.parse import urlsplit, urlunsplit
 from bs4 import BeautifulSoup
 
 from ..favoritos.services import FavoritoService
-from ..historico_precos.price_history import record_price
 from ..email.email import EmailFeature
 from app.shared.clients.mercadolivre import resilient_get
 
@@ -402,12 +401,6 @@ def buscar_promocoes_para_favoritos() -> tuple[int, int]:
                     },
                     "$unset": {"falhas_consecutivas": ""},
                 },
-            )
-            record_price(
-                link=produto_link,
-                name=produto_nome,
-                image=doc.get("produto_imagem", ""),
-                price=novo_valor,
             )
 
             # Envia e-mail se o preço atingiu ou ficou abaixo do alvo

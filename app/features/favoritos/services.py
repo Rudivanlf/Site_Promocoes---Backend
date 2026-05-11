@@ -9,6 +9,7 @@ import datetime
 from typing import Optional, Dict, Any, List
 
 from ..mongo import db
+from app.features.historico_precos.price_history import ensure_fake_history_for_link
 from ..utils import serialize_mongo, get_next_id
 
 
@@ -75,6 +76,12 @@ class FavoritoService:
         }
 
         self.collection.insert_one(doc)
+        ensure_fake_history_for_link(
+            link=doc["produto_link"],
+            name=doc["produto_nome"],
+            image=doc.get("produto_imagem", ""),
+            price=doc["produto_preco"],
+        )
         return _para_formato_frontend(doc)
 
     def remover(self, usuario_id: int, produto_link: str) -> bool:
